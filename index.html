@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Facturation Mensuelle BTP — Forma Interim</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-1:#F4F9FE; --bg-2:#E7F2FC; --card:#FFFFFF;
+  --border:#DDE8F4; --border-strong:#C2D4EA;
+  --text:#0F2B4A; --text-muted:#5B7595; --text-faint:#8FA4BE;
+  --primary:#1AAEEE; --primary-dark:#1495CE; --primary-light:#7ECFF4; --primary-soft:#E4F4FC;
+  --accent:#F58A3C; --accent-dark:#DE6F20; --accent-soft:#FFEEDC;
+  --ok:#22B573; --ok-soft:#DFF6EA; --ko:#E85D5D; --ko-soft:#FCE4E4;
+  --warn:#F5B400; --warn-soft:#FFF3CF;
+  --shadow-sm:0 1px 2px rgba(15,43,74,.04);
+  --shadow:0 10px 40px rgba(15,43,74,.06);
+  --shadow-lg:0 16px 50px rgba(15,43,74,.10);
+}
+[data-theme="dark"] {
+  --bg-1:#0B1220; --bg-2:#111A2C; --card:#1A2438;
+  --border:#1F2A40; --border-strong:#2D3A52;
+  --text:#F1F5F9; --text-muted:#CBD5E1; --text-faint:#94A3B8;
+  --primary:#4FC3F7; --primary-dark:#29B6F6; --primary-light:#81D4FA; --primary-soft:rgba(79,195,247,.15);
+  --accent:#FFA726; --accent-dark:#FB8C00; --accent-soft:rgba(255,167,38,.15);
+  --shadow:0 10px 40px rgba(0,0,0,.5); --shadow-lg:0 16px 50px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100vh}
+body{
+  font-family:'Plus Jakarta Sans',-apple-system,sans-serif;
+  background:var(--bg-1);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 10% 0%,rgba(26,174,238,.10),transparent 60%),
+    radial-gradient(ellipse 60% 50% at 100% 100%,rgba(245,138,60,.08),transparent 60%);
+  background-attachment:fixed;
+  color:var(--text); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  transition:background-color .25s,color .25s;
+}
+[data-theme="dark"] body{
+  background-image:
+    radial-gradient(ellipse 80% 60% at 10% 0%,rgba(79,195,247,.06),transparent 60%),
+    radial-gradient(ellipse 60% 50% at 100% 100%,rgba(255,167,38,.05),transparent 60%);
+}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+
+/* ── Theme toggle floating ── */
+.theme-toggle{
+  position:fixed;top:22px;right:22px;width:44px;height:44px;
+  border-radius:14px;border:1px solid var(--border);background:var(--card);
+  cursor:pointer;display:grid;place-items:center;color:var(--text-muted);
+  box-shadow:var(--shadow);transition:all .15s;z-index:50;
+}
+.theme-toggle:hover{color:var(--primary);transform:translateY(-1px)}
+.theme-toggle svg{width:20px;height:20px}
+[data-theme="light"] .theme-toggle .moon{display:block}
+[data-theme="light"] .theme-toggle .sun{display:none}
+[data-theme="dark"] .theme-toggle .moon{display:none}
+[data-theme="dark"] .theme-toggle .sun{display:block}
+
+/* ── App container ── */
+.app{
+  max-width:1500px;margin:0 auto;padding:32px 28px 80px;
+  animation:fadeUp .5s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Brand hero ── */
+.brand-hero{text-align:center;padding:8px 0 28px}
+.brand-logo{
+  width:88px;height:88px;border-radius:22px;
+  background:var(--card);border:1px solid var(--border);box-shadow:var(--shadow);
+  margin:0 auto 16px;padding:12px;display:grid;place-items:center;
+}
+.brand-logo img{width:100%;height:100%;object-fit:contain}
+.brand-name{font-size:24px;font-weight:800;letter-spacing:-0.01em;margin-bottom:4px}
+.brand-name .blue{color:var(--primary)} .brand-name .orange{color:var(--accent)}
+.app-title{font-size:20px;font-weight:700;margin-bottom:6px}
+.app-lede{font-size:14px;color:var(--text-muted);max-width:560px;margin:0 auto}
+
+/* ── Card ── */
+.card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:22px;box-shadow:var(--shadow);
+  margin-bottom:22px;overflow:hidden;
+}
+.card-head{
+  display:flex;align-items:center;gap:12px;
+  padding:18px 24px;border-bottom:1px solid var(--border);
+  font-weight:700;font-size:16px;color:var(--text);
+}
+.card-head .dot{
+  width:10px;height:10px;border-radius:50%;
+  background:var(--primary);box-shadow:0 0 0 4px var(--primary-soft);
+}
+.card-head.accent .dot{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.card-head.ok .dot{background:var(--ok);box-shadow:0 0 0 4px var(--ok-soft)}
+.card-head .head-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.card-body{padding:24px}
+
+/* ── Setup row ── */
+.setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted)}
+.input{
+  width:100%;padding:13px 16px;
+  font-family:inherit;font-size:15px;font-weight:600;
+  background:var(--bg-2);border:1.5px solid var(--border);
+  border-radius:12px;color:var(--text);outline:none;transition:all .2s;
+}
+.input.mono{font-family:'JetBrains Mono',monospace;font-weight:700;text-align:center}
+.input:hover{border-color:var(--border-strong)}
+.input:focus{border-color:var(--primary);background:var(--card);box-shadow:0 0 0 4px var(--primary-soft)}
+.input.input-primary{border-color:var(--primary);color:var(--primary-dark);background:var(--primary-soft)}
+[data-theme="dark"] .input.input-primary{color:var(--primary)}
+
+/* ── Buttons ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:13px 22px;font-size:14px;font-weight:700;font-family:inherit;
+  border-radius:12px;border:1.5px solid transparent;cursor:pointer;
+  transition:all .15s;min-height:48px;
+}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 4px 16px rgba(26,174,238,.3)}
+.btn-primary:hover{background:var(--primary-dark);transform:translateY(-1px);box-shadow:0 6px 22px rgba(26,174,238,.4)}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 4px 16px rgba(245,138,60,.3)}
+.btn-accent:hover{background:var(--accent-dark);transform:translateY(-1px);box-shadow:0 6px 22px rgba(245,138,60,.4)}
+.btn-ghost{background:var(--card);color:var(--text);border-color:var(--border-strong)}
+.btn-ghost:hover{background:var(--bg-2);border-color:var(--primary-light);color:var(--primary)}
+
+.btn-mini{
+  font-family:inherit;font-size:12px;font-weight:700;
+  padding:7px 12px;border-radius:9px;
+  border:1px solid var(--border-strong);background:var(--card);color:var(--text-muted);
+  cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s;
+}
+.btn-mini:hover{transform:translateY(-1px)}
+.btn-mini.add{background:var(--primary-soft);border-color:color-mix(in srgb,var(--primary) 30%,transparent);color:var(--primary)}
+.btn-mini.add:hover{background:var(--primary);color:#fff}
+.btn-mini.excel{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 30%,transparent);color:var(--accent-dark)}
+[data-theme="dark"] .btn-mini.excel{color:var(--accent)}
+.btn-mini.excel:hover{background:var(--accent);color:#fff}
+.btn-mini.danger{background:var(--ko-soft);border-color:color-mix(in srgb,var(--ko) 30%,transparent);color:var(--ko)}
+.btn-mini.danger:hover{background:var(--ko);color:#fff}
+
+/* ── Table ── */
+.t-wrap{overflow-x:auto;border-top:1px solid var(--border)}
+.t{
+  width:100%;border-collapse:collapse;
+  font-size:13px;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;
+}
+.t thead th{
+  text-align:left;padding:11px 10px;
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  color:var(--text-muted);background:var(--bg-2);
+  border-bottom:1.5px solid var(--border);white-space:nowrap;
+  font-family:'Plus Jakarta Sans',sans-serif;
+}
+.t thead th:first-child{padding-left:24px}
+.t thead th:last-child{padding-right:24px}
+.t thead th.right{text-align:right}
+.t thead th.center{text-align:center}
+.t thead th.week{color:var(--primary);text-align:center}
+.t thead th.salaire{color:var(--text);text-align:right}
+.t thead th.facture{color:var(--accent-dark);text-align:right}
+[data-theme="dark"] .t thead th.facture{color:var(--accent)}
+
+.t tbody td{padding:10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.t tbody td:first-child{padding-left:24px}
+.t tbody td:last-child{padding-right:24px}
+.t tbody td.right{text-align:right;font-weight:700}
+.t tbody td.center{text-align:center}
+.t tbody td.salaire{color:var(--text);font-weight:700}
+.t tbody td.facture{color:var(--accent-dark);font-weight:700}
+[data-theme="dark"] .t tbody td.facture{color:var(--accent)}
+
+.t tbody tr:hover{background:var(--primary-soft)}
+.t-input{
+  width:60px;padding:6px 8px;font-family:'JetBrains Mono',monospace;
+  font-size:12px;font-weight:700;text-align:center;
+  border:1px solid var(--border);border-radius:6px;background:var(--bg-2);color:var(--text);outline:none;
+}
+.t-input:focus{border-color:var(--primary);background:var(--card);box-shadow:0 0 0 3px var(--primary-soft)}
+.t-input.name{width:170px;text-align:left;font-family:inherit;font-weight:600}
+.t-input.eur{color:var(--accent-dark);width:75px}
+[data-theme="dark"] .t-input.eur{color:var(--accent)}
+.t-input.day{width:42px}
+
+.t-row-tot{background:var(--accent-soft);font-weight:800}
+.t-row-tot td{border-top:1.5px solid var(--accent);color:var(--accent-dark);padding-top:14px;padding-bottom:14px}
+[data-theme="dark"] .t-row-tot td{color:var(--accent)}
+
+.btn-icon{
+  width:28px;height:28px;border:1px solid var(--border);border-radius:7px;
+  background:var(--card);color:var(--text-muted);cursor:pointer;
+  font-size:11px;transition:all .15s;font-family:inherit;
+}
+.btn-icon:hover{color:var(--ko);border-color:var(--ko);background:var(--ko-soft)}
+
+/* ── Total card ── */
+.totals-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.total-tile{
+  padding:22px;border-radius:18px;border:1.5px solid var(--border);background:var(--card);
+}
+.total-tile.salaire{background:var(--bg-2)}
+.total-tile.facture{
+  background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+  color:#fff;border-color:transparent;
+  box-shadow:0 10px 28px -8px var(--accent);
+}
+.total-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;opacity:.85;margin-bottom:10px}
+.total-tile.facture .total-label{opacity:.9}
+.total-value{font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:800;line-height:1;letter-spacing:-.02em}
+.total-tile.facture .total-value{color:#fff}
+.total-sub{font-size:12px;margin-top:8px;opacity:.85}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:40px 24px;color:var(--text-muted)}
+.empty .ic{font-size:32px;margin-bottom:10px}
+
+/* ── Top action bar ── */
+.action-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px;justify-content:center}
+.action-bar .btn{padding:11px 18px;font-size:13px;min-height:42px}
+
+/* ── Info banner ── */
+.info{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:13px 16px;background:var(--primary-soft);
+  border:1px solid color-mix(in srgb,var(--primary) 25%,transparent);
+  border-radius:14px;font-size:13px;color:var(--text-muted);margin-bottom:22px;
+}
+.info strong{color:var(--text)}
+
+/* Responsive */
+@media (max-width:768px){
+  .setup-grid{grid-template-columns:1fr}
+  .totals-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Changer le thème">
+  <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+  <svg class="sun"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+</button>
+
+<main class="app">
+
+  <!-- BRAND HERO -->
+  <div class="brand-hero">
+    <div class="brand-logo"><img src="public/brand/forma-mark.png" alt="Forma Interim BTP"></div>
+    <div class="brand-name"><span class="blue">FORMA</span> <span class="orange">INTERIM</span></div>
+    <h1 class="app-title">Facturation Mensuelle BTP</h1>
+    <p class="app-lede">Convertis ton équipe hebdo en facturation mensuelle prête à envoyer à la paie et au client.</p>
+  </div>
+
+  <!-- INFO BANNER -->
+  <div class="info">
+    <span style="font-size:18px">💡</span>
+    <span><strong>Comment ça marche.</strong> Renseigne ton chantier et le mois à facturer. Saisis chaque intérimaire avec son <em>salaire net hebdo</em> (sera divisé par 5 → taux journalier net) et son <em>tarif facture hebdo</em> (idem, ÷5). Pour chaque semaine du mois, indique le nombre de jours travaillés. Ajoute les heures fériées en bas si besoin.</span>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div class="action-bar">
+    <button class="btn btn-ghost" onclick="resetAll()">↺ Tout réinitialiser</button>
+    <button class="btn btn-primary" onclick="alert('Bouton à connecter au calculateur — voir spec')">📥 Importer depuis le calculateur</button>
+    <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
+    <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimer / PDF</button>
+  </div>
+
+  <!-- SETUP -->
+  <section class="card">
+    <header class="card-head"><span class="dot"></span> Chantier & période</header>
+    <div class="card-body">
+      <div class="setup-grid">
+        <div class="field">
+          <span class="field-label">Nom du chantier</span>
+          <input class="input" id="chantier" value="ACTIBAT — Bois sacré actibat Leonardo" oninput="render()">
+        </div>
+        <div class="field">
+          <span class="field-label">Mois à facturer</span>
+          <select class="input" id="mois" onchange="render()">
+            <!-- rempli par JS -->
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ÉQUIPE -->
+  <section class="card">
+    <header class="card-head">
+      <span class="dot"></span> Équipe
+      <div class="head-actions">
+        <span style="font-size:12px;color:var(--text-muted)" id="eq-count">0 intérimaire</span>
+        <button class="btn-mini add" onclick="addEmp()">+ Ajouter intérimaire</button>
+      </div>
+    </header>
+    <div class="t-wrap" id="t-wrap-eq">
+      <!-- table générée par JS -->
+    </div>
+    <div class="empty" id="empty-eq" style="display:none">
+      <div class="ic">👷</div>
+      <p>Ajoute un premier intérimaire pour démarrer la facturation.</p>
+    </div>
+  </section>
+
+  <!-- FÉRIÉS -->
+  <section class="card">
+    <header class="card-head accent">
+      <span class="dot"></span> Heures fériées (optionnel)
+      <div class="head-actions">
+        <button class="btn-mini add" onclick="addFerie()">+ Ajouter ligne férié</button>
+      </div>
+    </header>
+    <div class="t-wrap" id="t-wrap-ferie">
+      <!-- table générée par JS -->
+    </div>
+    <div class="empty" id="empty-ferie">
+      <div class="ic">🇫🇷</div>
+      <p style="font-size:12px">Pas de jour férié travaillé ce mois ? Laisse vide. Sinon ajoute une ligne par intérimaire concerné.</p>
+    </div>
+  </section>
+
+  <!-- TOTAUX -->
+  <section class="card">
+    <header class="card-head ok"><span class="dot"></span> Totaux du mois</header>
+    <div class="card-body">
+      <div class="totals-grid">
+        <div class="total-tile salaire">
+          <div class="total-label">Salaires nets totaux (paie)</div>
+          <div class="total-value mono" id="tot-sal">0,00 €</div>
+          <div class="total-sub" id="tot-sal-sub">— jours travaillés</div>
+        </div>
+        <div class="total-tile salaire">
+          <div class="total-label">Heures fériées</div>
+          <div class="total-value mono" id="tot-ferie">0,00 €</div>
+          <div class="total-sub" id="tot-ferie-sub">salaire / facture</div>
+        </div>
+        <div class="total-tile facture">
+          <div class="total-label">Facture client (TOTAL)</div>
+          <div class="total-value mono" id="tot-fac">0,00 €</div>
+          <div class="total-sub" id="tot-fac-sub">à envoyer au client</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* ════════ THEME TOGGLE ════════ */
+function toggleTheme(){
+  const r=document.documentElement;
+  const n=r.dataset.theme==='dark'?'light':'dark';
+  r.dataset.theme=n;
+  try{localStorage.setItem('forma_theme',n)}catch(e){}
+}
+try{const s=localStorage.getItem('forma_theme');if(s)document.documentElement.dataset.theme=s}catch(e){}
+
+/* ════════ STATE ════════ */
+const STATE = {
+  chantier: '',
+  year: 2026, month: 3, // avril (0-indexed)
+  emps: [
+    // demo data
+    { id: 1, nom: 'Pereira Varela Edgar', salNetHebdo: 850, factureHebdo: 1547, jours: {} },
+    { id: 2, nom: 'Borges Sanches Roberlo Augusto', salNetHebdo: 850, factureHebdo: 1547, jours: {} },
+  ],
+  feries: [],
+  empIdCtr: 3,
+  ferieIdCtr: 1,
+};
+
+/* ════════ UTILS ════════ */
+const f = (n) => isFinite(n) ? n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €' : '–';
+const fInt = (n) => isFinite(n) ? n.toLocaleString('fr-FR') : '0';
+
+function getISOWeek(date){
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return Math.ceil((((d - yearStart)/86400000) + 1) / 7);
+}
+function getWeeksOfMonth(year, monthIdx){
+  const last = new Date(year, monthIdx+1, 0).getDate();
+  const set = new Set();
+  for(let i=1;i<=last;i++){
+    set.add(getISOWeek(new Date(year, monthIdx, i)));
+  }
+  return [...set].sort((a,b)=>a-b);
+}
+function monthName(m){
+  return ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][m];
+}
+
+/* ════════ MOIS DROPDOWN ════════ */
+function fillMois(){
+  const sel = document.getElementById('mois');
+  sel.innerHTML = '';
+  for(let y=2025; y<=2027; y++){
+    for(let m=0; m<12; m++){
+      const opt = document.createElement('option');
+      opt.value = `${y}-${m}`;
+      opt.textContent = `${monthName(m)} ${y}`;
+      if(y===STATE.year && m===STATE.month) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+  sel.addEventListener('change', () => {
+    const [y,m] = sel.value.split('-').map(Number);
+    STATE.year = y; STATE.month = m;
+    render();
+  });
+}
+
+/* ════════ ÉQUIPE TABLE ════════ */
+function setEmpField(id, field, value){
+  const e = STATE.emps.find(x=>x.id===id); if(!e) return;
+  if(field==='nom') e.nom = value;
+  else e[field] = parseFloat(value)||0;
+  computeAndRenderTotals();
+}
+function setEmpJours(id, week, value){
+  const e = STATE.emps.find(x=>x.id===id); if(!e) return;
+  const v = Math.max(0, Math.min(7, parseInt(value)||0));
+  e.jours[week] = v;
+  computeAndRenderTotals();
+}
+function delEmp(id){
+  if(!confirm('Supprimer cet intérimaire ?')) return;
+  STATE.emps = STATE.emps.filter(x=>x.id!==id);
+  STATE.feries = STATE.feries.filter(x=>x.empId!==id);
+  render();
+}
+function addEmp(){
+  STATE.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, factureHebdo:0, jours:{} });
+  render();
+}
+function renderEmpTable(weeks){
+  const wrap = document.getElementById('t-wrap-eq');
+  const empty = document.getElementById('empty-eq');
+  const count = document.getElementById('eq-count');
+  count.textContent = STATE.emps.length + ' intérimaire' + (STATE.emps.length>1?'s':'');
+  if(STATE.emps.length===0){ wrap.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+
+  let head = `<table class="t"><thead><tr>
+    <th>Nom / Prénom</th>
+    <th class="right">Sal. net hebdo</th>
+    <th class="right">Fact. hebdo</th>
+    <th class="right">€/J net</th>
+    <th class="right">€/J fact.</th>`;
+  weeks.forEach(w => head += `<th class="week">S${w}</th>`);
+  head += `<th class="center">Total/JR</th>
+    <th class="salaire">SALAIRE</th>
+    <th class="facture">FACTURE</th>
+    <th></th>
+  </tr></thead><tbody>`;
+
+  let body='';
+  STATE.emps.forEach(e => {
+    const tjNet = e.salNetHebdo / 5;
+    const tjFac = e.factureHebdo / 5;
+    let totJr = 0;
+    weeks.forEach(w => totJr += (e.jours[w]||0));
+    const sal = totJr * tjNet;
+    const fac = totJr * tjFac;
+
+    body += `<tr>
+      <td><input class="t-input name" value="${e.nom.replace(/"/g,'&quot;')}" placeholder="Nom Prénom" oninput="setEmpField(${e.id},'nom',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${e.salNetHebdo}" oninput="setEmpField(${e.id},'salNetHebdo',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${e.factureHebdo}" oninput="setEmpField(${e.id},'factureHebdo',this.value)"></td>
+      <td class="right">${f(tjNet)}</td>
+      <td class="right">${f(tjFac)}</td>`;
+    weeks.forEach(w => {
+      body += `<td class="center"><input class="t-input day" value="${e.jours[w]||0}" oninput="setEmpJours(${e.id},${w},this.value)"></td>`;
+    });
+    body += `<td class="center" style="font-weight:700">${totJr}</td>
+      <td class="right salaire">${f(sal)}</td>
+      <td class="right facture">${f(fac)}</td>
+      <td><button class="btn-icon" onclick="delEmp(${e.id})" title="Supprimer">✕</button></td>
+    </tr>`;
+  });
+
+  // ligne TOTAL
+  let tSal=0, tFac=0, tJr=0;
+  STATE.emps.forEach(e => {
+    let j = 0; weeks.forEach(w => j += (e.jours[w]||0));
+    tJr += j;
+    tSal += j * (e.salNetHebdo/5);
+    tFac += j * (e.factureHebdo/5);
+  });
+  body += `<tr class="t-row-tot">
+    <td colspan="${5+weeks.length}">TOTAL — ${STATE.emps.length} intérimaire${STATE.emps.length>1?'s':''}</td>
+    <td class="center">${tJr}</td>
+    <td class="right">${f(tSal)}</td>
+    <td class="right">${f(tFac)}</td>
+    <td></td>
+  </tr>`;
+
+  body += `</tbody></table>`;
+  wrap.innerHTML = head + body;
+}
+
+/* ════════ FÉRIÉS ════════ */
+function addFerie(){
+  if(STATE.emps.length===0){ alert('Ajoute d\'abord un intérimaire à l\'équipe.'); return; }
+  STATE.feries.push({ id: STATE.ferieIdCtr++, empId: STATE.emps[0].id, heures: 0, tauxSal: 0, tauxFac: 0 });
+  render();
+}
+function setFerieField(id, field, value){
+  const x = STATE.feries.find(f=>f.id===id); if(!x) return;
+  if(field==='empId') x.empId = parseInt(value);
+  else x[field] = parseFloat(value)||0;
+  computeAndRenderTotals();
+}
+function delFerie(id){
+  STATE.feries = STATE.feries.filter(x=>x.id!==id);
+  render();
+}
+function renderFerieTable(){
+  const wrap = document.getElementById('t-wrap-ferie');
+  const empty = document.getElementById('empty-ferie');
+  if(STATE.feries.length===0){ wrap.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+
+  let head = `<table class="t"><thead><tr>
+    <th>Intérimaire</th>
+    <th class="center">Heures</th>
+    <th class="right">Taux salaire €/h</th>
+    <th class="right">Taux facture €/h</th>
+    <th class="salaire">SALAIRE</th>
+    <th class="facture">FACTURE</th>
+    <th></th>
+  </tr></thead><tbody>`;
+
+  STATE.feries.forEach(x => {
+    const sal = x.heures * x.tauxSal;
+    const fac = x.heures * x.tauxFac;
+    let opts = STATE.emps.map(e =>
+      `<option value="${e.id}" ${e.id===x.empId?'selected':''}>${e.nom||'(sans nom)'}</option>`
+    ).join('');
+    head += `<tr>
+      <td><select class="t-input name" onchange="setFerieField(${x.id},'empId',this.value)">${opts}</select></td>
+      <td class="center"><input class="t-input day" value="${x.heures}" oninput="setFerieField(${x.id},'heures',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${x.tauxSal}" oninput="setFerieField(${x.id},'tauxSal',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${x.tauxFac}" oninput="setFerieField(${x.id},'tauxFac',this.value)"></td>
+      <td class="right salaire">${f(sal)}</td>
+      <td class="right facture">${f(fac)}</td>
+      <td><button class="btn-icon" onclick="delFerie(${x.id})" title="Supprimer">✕</button></td>
+    </tr>`;
+  });
+
+  let tSal=0, tFac=0;
+  STATE.feries.forEach(x => { tSal += x.heures*x.tauxSal; tFac += x.heures*x.tauxFac; });
+  head += `<tr class="t-row-tot">
+    <td colspan="4">TOTAL férié</td>
+    <td class="right">${f(tSal)}</td>
+    <td class="right">${f(tFac)}</td>
+    <td></td>
+  </tr></tbody></table>`;
+  wrap.innerHTML = head;
+}
+
+/* ════════ TOTAUX GLOBAUX ════════ */
+function computeAndRenderTotals(){
+  const weeks = getWeeksOfMonth(STATE.year, STATE.month);
+  let tSal=0, tFac=0, tJr=0;
+  STATE.emps.forEach(e => {
+    let j = 0; weeks.forEach(w => j += (e.jours[w]||0));
+    tJr += j;
+    tSal += j * (e.salNetHebdo/5);
+    tFac += j * (e.factureHebdo/5);
+  });
+  let fSal=0, fFac=0;
+  STATE.feries.forEach(x => { fSal += x.heures*x.tauxSal; fFac += x.heures*x.tauxFac; });
+
+  document.getElementById('tot-sal').textContent = f(tSal);
+  document.getElementById('tot-sal-sub').textContent = `${tJr} jour${tJr>1?'s':''} travaillé${tJr>1?'s':''}`;
+  document.getElementById('tot-ferie').textContent = f(fSal);
+  document.getElementById('tot-ferie-sub').textContent = STATE.feries.length===0 ? 'aucun' : `salaire — facture ${f(fFac)}`;
+  document.getElementById('tot-fac').textContent = f(tFac + fFac);
+  document.getElementById('tot-fac-sub').textContent = `dont ${f(fFac)} de fériés`;
+
+  // refresh table totals
+  renderEmpTable(weeks);
+  renderFerieTable();
+}
+
+/* ════════ MASTER RENDER ════════ */
+function render(){
+  const ch = document.getElementById('chantier');
+  STATE.chantier = ch.value;
+  const weeks = getWeeksOfMonth(STATE.year, STATE.month);
+  renderEmpTable(weeks);
+  renderFerieTable();
+  computeAndRenderTotals();
+}
+
+/* ════════ EXPORT CSV ════════ */
+function exportCSV(){
+  const weeks = getWeeksOfMonth(STATE.year, STATE.month);
+  const sep = ';';
+  let csv = `${STATE.chantier} — Facturation ${monthName(STATE.month)} ${STATE.year}\n\n`;
+  csv += ['Nom','Sal net hebdo','Fact hebdo','€/J net','€/J fact', ...weeks.map(w=>'S'+w),'Total/JR','SALAIRE','FACTURE'].join(sep) + '\n';
+  STATE.emps.forEach(e => {
+    let j=0; weeks.forEach(w => j += (e.jours[w]||0));
+    const tjN = e.salNetHebdo/5, tjF = e.factureHebdo/5;
+    const row = [
+      e.nom, e.salNetHebdo, e.factureHebdo,
+      tjN.toFixed(2), tjF.toFixed(2),
+      ...weeks.map(w => e.jours[w]||0),
+      j, (j*tjN).toFixed(2), (j*tjF).toFixed(2)
+    ];
+    csv += row.join(sep) + '\n';
+  });
+  if(STATE.feries.length){
+    csv += '\nFÉRIÉS\n';
+    csv += ['Intérimaire','Heures','Taux sal €/h','Taux fac €/h','SALAIRE','FACTURE'].join(sep) + '\n';
+    STATE.feries.forEach(x => {
+      const e = STATE.emps.find(y=>y.id===x.empId);
+      csv += [e?.nom||'?',x.heures,x.tauxSal,x.tauxFac,(x.heures*x.tauxSal).toFixed(2),(x.heures*x.tauxFac).toFixed(2)].join(sep) + '\n';
+    });
+  }
+  const blob = new Blob(["﻿"+csv], { type:'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${STATE.chantier.replace(/[^\w-]+/g,'_')}_${monthName(STATE.month)}_${STATE.year}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ════════ RESET ════════ */
+function resetAll(){
+  if(!confirm('Tout effacer (équipe + fériés) ?')) return;
+  STATE.emps = [];
+  STATE.feries = [];
+  render();
+}
+
+/* ════════ IMPORT FROM URL HASH ════════ */
+function importFromHash(){
+  try{
+    const h = window.location.hash;
+    if(!h || !h.startsWith('#data=')) return false;
+    const b64 = h.slice('#data='.length);
+    const json = decodeURIComponent(escape(atob(b64)));
+    const data = JSON.parse(json);
+    if(data.chantier) STATE.chantier = data.chantier;
+    if(typeof data.year==='number') STATE.year = data.year;
+    if(typeof data.month==='number') STATE.month = data.month;
+    if(Array.isArray(data.emps)){
+      STATE.emps = data.emps.map((e,i) => ({
+        id: i+1,
+        nom: e.nom||'',
+        salNetHebdo: parseFloat(e.salNetHebdo)||0,
+        factureHebdo: parseFloat(e.factureHebdo)||0,
+        jours: {}
+      }));
+      STATE.empIdCtr = STATE.emps.length + 1;
+    }
+    // Met à jour les inputs
+    const ch = document.getElementById('chantier');
+    if(ch) ch.value = STATE.chantier;
+    return true;
+  }catch(err){
+    console.warn('Import depuis hash échoué :', err);
+    return false;
+  }
+}
+
+/* ════════ INIT ════════ */
+fillMois();
+const imported = importFromHash();
+if(imported){
+  // Sélectionne le bon mois si fourni
+  const sel = document.getElementById('mois');
+  if(sel) sel.value = `${STATE.year}-${STATE.month}`;
+  // Bannière de confirmation
+  const banner = document.createElement('div');
+  banner.className = 'info';
+  banner.style.background = 'var(--ok-soft)';
+  banner.style.borderColor = 'rgba(34,181,115,.4)';
+  banner.innerHTML = `<span style="font-size:18px">✅</span><span><strong>Équipe importée depuis le Calculateur de Marge.</strong> ${STATE.emps.length} intérimaire(s) chargé(s). Saisis maintenant la présence par semaine.</span>`;
+  document.querySelector('.info').replaceWith(banner);
+}
+render();
+</script>
+</body>
+</html>

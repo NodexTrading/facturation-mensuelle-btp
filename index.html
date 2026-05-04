@@ -373,6 +373,33 @@ const STATE = {
   empIdCtr: 1,
   ferieIdCtr: 1,
 };
+const STORAGE_KEY = 'forma_facturation_v2';
+function saveStorage(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      chantier: STATE.chantier,
+      year: STATE.year, month: STATE.month,
+      emps: STATE.emps, feries: STATE.feries,
+      empIdCtr: STATE.empIdCtr, ferieIdCtr: STATE.ferieIdCtr
+    }));
+  }catch(e){}
+}
+function loadStorage(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    if(typeof d.chantier==='string') STATE.chantier = d.chantier;
+    if(typeof d.year==='number') STATE.year = d.year;
+    if(typeof d.month==='number') STATE.month = d.month;
+    if(Array.isArray(d.emps)) STATE.emps = d.emps;
+    if(Array.isArray(d.feries)) STATE.feries = d.feries;
+    if(typeof d.empIdCtr==='number') STATE.empIdCtr = d.empIdCtr;
+    if(typeof d.ferieIdCtr==='number') STATE.ferieIdCtr = d.ferieIdCtr;
+    return true;
+  }catch(e){ return false; }
+}
+function clearStorage(){ try{ localStorage.removeItem(STORAGE_KEY); }catch(e){} }
 
 /* ════════ UTILS ════════ */
 const f = (n) => isFinite(n) ? n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €' : '–';
@@ -412,7 +439,7 @@ function fillMois(){
   sel.addEventListener('change', () => {
     const [y,m] = sel.value.split('-').map(Number);
     STATE.year = y; STATE.month = m;
-    render();
+    render(); saveStorage();
   });
 }
 
@@ -422,22 +449,24 @@ function setEmpField(id, field, value){
   if(field==='nom') e.nom = value;
   else e[field] = parseFloat(value)||0;
   computeAndRenderTotals();
+  saveStorage();
 }
 function setEmpJours(id, week, value){
   const e = STATE.emps.find(x=>x.id===id); if(!e) return;
   const v = Math.max(0, Math.min(7, parseInt(value)||0));
   e.jours[week] = v;
   computeAndRenderTotals();
+  saveStorage();
 }
 function delEmp(id){
   if(!confirm('Supprimer cet intérimaire ?')) return;
   STATE.emps = STATE.emps.filter(x=>x.id!==id);
   STATE.feries = STATE.feries.filter(x=>x.empId!==id);
-  render();
+  render(); saveStorage();
 }
 function addEmp(){
   STATE.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, factureHebdo:0, jours:{} });
-  render();
+  render(); saveStorage();
 }
 function renderEmpTable(weeks){
   const wrap = document.getElementById('t-wrap-eq');
@@ -509,17 +538,18 @@ function renderEmpTable(weeks){
 function addFerie(){
   if(STATE.emps.length===0){ alert('Ajoute d\'abord un intérimaire à l\'équipe.'); return; }
   STATE.feries.push({ id: STATE.ferieIdCtr++, empId: STATE.emps[0].id, heures: 0, tauxSal: 0, tauxFac: 0 });
-  render();
+  render(); saveStorage();
 }
 function setFerieField(id, field, value){
   const x = STATE.feries.find(f=>f.id===id); if(!x) return;
   if(field==='empId') x.empId = parseInt(value);
   else x[field] = parseFloat(value)||0;
   computeAndRenderTotals();
+  saveStorage();
 }
 function delFerie(id){
   STATE.feries = STATE.feries.filter(x=>x.id!==id);
-  render();
+  render(); saveStorage();
 }
 function renderFerieTable(){
   const wrap = document.getElementById('t-wrap-ferie');
@@ -598,6 +628,7 @@ function render(){
   renderEmpTable(weeks);
   renderFerieTable();
   computeAndRenderTotals();
+  saveStorage();
 }
 
 /* ════════ EXPORT CSV ════════ */
@@ -642,52 +673,89 @@ function resetAll(){
   render();
 }
 
-/* ════════ IMPORT FROM URL HASH ════════ */
+/* ════════ IMPORT FROM URL HASH (mode APPEND) ════════ */
 function importFromHash(){
   try{
     const h = window.location.hash;
-    if(!h || !h.startsWith('#data=')) return false;
-    const b64 = h.slice('#data='.length);
+    if(!h) return 0;
+    // Match #data=... (base64 ou base64url) avec timestamp éventuel
+    const m = h.match(/[#&]data=([A-Za-z0-9+/=_-]+)/);
+    if(!m) return 0;
+    // Convertit base64url → base64 standard si besoin
+    let b64 = m[1].replace(/-/g,'+').replace(/_/g,'/');
+    while(b64.length % 4) b64 += '=';
     const json = decodeURIComponent(escape(atob(b64)));
     const data = JSON.parse(json);
-    if(data.chantier) STATE.chantier = data.chantier;
-    if(typeof data.year==='number') STATE.year = data.year;
+    // Métadonnées : remplacer le mois/chantier seulement si non encore renseignés
+    if(data.chantier && !STATE.chantier) STATE.chantier = data.chantier;
+    if(typeof data.year==='number')  STATE.year  = data.year;
     if(typeof data.month==='number') STATE.month = data.month;
+    // emps : on AJOUTE à l'existant (jamais remplacer)
+    let added = 0;
     if(Array.isArray(data.emps)){
-      STATE.emps = data.emps.map((e,i) => ({
-        id: i+1,
-        nom: e.nom||'',
-        salNetHebdo: parseFloat(e.salNetHebdo)||0,
-        factureHebdo: parseFloat(e.factureHebdo)||0,
-        jours: {}
-      }));
-      STATE.empIdCtr = STATE.emps.length + 1;
+      data.emps.forEach(e => {
+        STATE.emps.push({
+          id: STATE.empIdCtr++,
+          nom: e.nom||'',
+          salNetHebdo: parseFloat(e.salNetHebdo)||0,
+          factureHebdo: parseFloat(e.factureHebdo)||0,
+          jours: {}
+        });
+        added++;
+      });
     }
-    // Met à jour les inputs
-    const ch = document.getElementById('chantier');
-    if(ch) ch.value = STATE.chantier;
-    return true;
+    // Nettoyer le hash pour éviter ré-import au refresh
+    try{ history.replaceState(null,'',window.location.pathname); }catch(e){}
+    return added;
   }catch(err){
     console.warn('Import depuis hash échoué :', err);
-    return false;
+    return 0;
   }
 }
 
-/* ════════ INIT ════════ */
-fillMois();
-const imported = importFromHash();
-if(imported){
-  // Sélectionne le bon mois si fourni
-  const sel = document.getElementById('mois');
-  if(sel) sel.value = `${STATE.year}-${STATE.month}`;
-  // Bannière de confirmation
+function showImportBanner(count){
+  const old = document.querySelector('.info-imported');
+  if(old) old.remove();
   const banner = document.createElement('div');
-  banner.className = 'info';
+  banner.className = 'info info-imported';
   banner.style.background = 'var(--ok-soft)';
   banner.style.borderColor = 'rgba(34,181,115,.4)';
-  banner.innerHTML = `<span style="font-size:18px">✅</span><span><strong>Équipe importée depuis le Calculateur de Marge.</strong> ${STATE.emps.length} intérimaire(s) chargé(s). Saisis maintenant la présence par semaine.</span>`;
-  document.querySelector('.info').replaceWith(banner);
+  banner.innerHTML = `<span style="font-size:18px">✅</span><span><strong>${count} intérimaire${count>1?'s':''} ajouté${count>1?'s':''}</strong> depuis le Calculateur de Marge.</span>`;
+  const target = document.querySelector('.info');
+  if(target && target.parentNode) target.parentNode.insertBefore(banner, target.nextSibling);
+  setTimeout(() => banner.remove(), 6000);
 }
+
+/* ════════ INIT ════════ */
+loadStorage();
+fillMois();
+// Synchroniser inputs avec STATE
+const _ch = document.getElementById('chantier');
+if(_ch) _ch.value = STATE.chantier || '';
+const _ms = document.getElementById('mois');
+if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
+
+const importedCount = importFromHash();
+if(importedCount > 0){
+  // Synchroniser le sélecteur de mois si modifié par import
+  if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
+  if(_ch) _ch.value = STATE.chantier || '';
+  saveStorage();
+  showImportBanner(importedCount);
+}
+
+// Listener pour les imports successifs (réutilise le même tab depuis le calc)
+window.addEventListener('hashchange', () => {
+  const c = importFromHash();
+  if(c > 0){
+    if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
+    if(_ch) _ch.value = STATE.chantier || '';
+    saveStorage();
+    showImportBanner(c);
+    render();
+  }
+});
+
 render();
 </script>
 </body>

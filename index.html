@@ -270,8 +270,10 @@ body{
   <div class="action-bar">
     <button class="btn btn-ghost" onclick="resetAll()">↺ Tout réinitialiser</button>
     <button class="btn btn-primary" onclick="window.open('https://calculateur-de-marge-ten.vercel.app/','_blank')" title="Le transfert se fait depuis le calculateur : ouvre-le, clique sur 📤 Facturation mensuelle, et l'équipe arrivera ici automatiquement">↗ Ouvrir le Calculateur de Marge</button>
+    <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimer / PDF</button>
+    <input type="file" id="csv-import-input" accept=".csv,.txt" style="display:none" onchange="onCSVImport(event)">
   </div>
 
   <!-- SETUP -->
@@ -671,6 +673,92 @@ function resetAll(){
   STATE.emps = [];
   STATE.feries = [];
   render();
+}
+
+/* ════════ IMPORT CSV — relevé d'heures P/A ════════ */
+function triggerImportCSV(){
+  document.getElementById('csv-import-input').click();
+}
+function onCSVImport(ev){
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try { importPresenceCSV(e.target.result); }
+    catch(err){ alert('Erreur lecture CSV : ' + err.message); }
+    ev.target.value = ''; // reset pour permettre re-upload du même fichier
+  };
+  reader.readAsText(file, 'utf-8');
+}
+function _normalizeName(s){
+  return (s||'').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'') // retire les accents
+    .replace(/[^a-z0-9 ]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function importPresenceCSV(text){
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
+  if(!lines.length){ alert('Fichier vide.'); return; }
+
+  // BOM UTF-8
+  if(lines[0].charCodeAt(0) === 0xFEFF) lines[0] = lines[0].slice(1);
+
+  // Détection séparateur
+  const sep = (lines[0].split(';').length >= lines[0].split(',').length) ? ';' : ',';
+  const split = l => l.split(sep).map(c => c.trim());
+
+  const header = split(lines[0]).map(h => h.toLowerCase());
+  const nameCol = header.findIndex(h => /^(nom|name|prenom|prénom)$/.test(h));
+  if(nameCol < 0){
+    alert('Pas de colonne « nom » trouvée dans l\'en-tête. Format attendu : nom;S14;S15;…');
+    return;
+  }
+  // Repère les colonnes semaine (S14, S15, …)
+  const weekCols = [];
+  header.forEach((h,i) => {
+    const m = h.match(/^s\s*(\d+)$/i);
+    if(m) weekCols.push({col:i, week: parseInt(m[1],10)});
+  });
+  if(!weekCols.length){
+    alert('Aucune colonne semaine trouvée (attendu : S14, S15, …).');
+    return;
+  }
+
+  let matched=0, created=0, missingPresences=[];
+  for(let i=1; i<lines.length; i++){
+    const cols = split(lines[i]);
+    const nomRaw = cols[nameCol];
+    if(!nomRaw) continue;
+
+    const normNom = _normalizeName(nomRaw);
+    let emp = STATE.emps.find(e => _normalizeName(e.nom) === normNom);
+    if(!emp){
+      emp = { id: STATE.empIdCtr++, nom: nomRaw, salNetHebdo: 0, factureHebdo: 0, jours: {} };
+      STATE.emps.push(emp);
+      created++;
+      missingPresences.push(nomRaw);
+    } else {
+      matched++;
+    }
+    // Pour chaque semaine : compter les P
+    weekCols.forEach(({col, week}) => {
+      const code = (cols[col]||'').toUpperCase().replace(/\s+/g,'');
+      if(!code || code === '-') return; // pas en mission cette semaine
+      const nbP = (code.match(/P/g) || []).length;
+      emp.jours[week] = Math.max(0, Math.min(7, nbP));
+    });
+  }
+
+  saveStorage();
+  render();
+
+  let msg = `✅ Import terminé\n\n${matched} intérimaire${matched>1?'s':''} mis à jour`;
+  if(created > 0){
+    msg += `\n⚠️  ${created} intérimaire${created>1?'s':''} créé${created>1?'s':''} automatiquement (salaire/facture vides à renseigner) :\n   • ` + missingPresences.slice(0,8).join('\n   • ');
+    if(missingPresences.length > 8) msg += `\n   … et ${missingPresences.length-8} de plus`;
+  }
+  alert(msg);
 }
 
 /* ════════ IMPORT FROM URL HASH (mode APPEND) ════════ */

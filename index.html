@@ -736,16 +736,21 @@ function resetAll(){
 /* ════════ MODAL CARNET ════════ */
 function openCarnet(){
   const names = Object.keys(CARNET).sort((a,b)=>a.localeCompare(b,'fr'));
+  const topActions = `
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="openCarnetBulkAdd()">+ Ajout en masse</button>
+      <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="exportCarnetCSV()">📤 Exporter (CSV)</button>
+    </div>`;
   let body;
   if(names.length === 0){
-    body = `<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:30px 0">
-      Le carnet est vide. Il se remplira automatiquement à chaque fois que tu ajoutes un intérimaire avec son salaire et tarif.
+    body = topActions + `<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:24px 0">
+      Le carnet est vide. Tu peux le pré-remplir avec <strong>+ Ajout en masse</strong>, ou laisse-le se remplir automatiquement quand tu saisiras un intérimaire avec sa rémunération.
     </p>`;
   } else {
-    body = `<p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+    body = topActions + `<p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
       ${names.length} intérimaire${names.length>1?'s':''} en mémoire. Clique sur un nom pour l'ajouter au tableau.
     </p>
-    <div style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:14px;background:var(--bg-2);padding:6px">`;
+    <div style="max-height:48vh;overflow-y:auto;border:1px solid var(--border);border-radius:14px;background:var(--bg-2);padding:6px">`;
     names.forEach(n => {
       const c = CARNET[n];
       body += `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border-radius:10px;margin-bottom:5px;border:1px solid var(--border)">
@@ -760,6 +765,63 @@ function openCarnet(){
   }
   showModal('📚 Carnet d\'intérimaires', body);
 }
+function openCarnetBulkAdd(){
+  const html = `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+      Colle <strong>une ligne par intérimaire</strong>, au format :
+    </p>
+    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px">Nom Prénom;sal_net_hebdo;facture_hebdo</pre>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Exemple :</p>
+    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.7">PEREIRA VARELA EDGAR;850;1547
+BORGES SANCHES ROBALO AUGUSTO;850;1547
+DIALLO ABDOUL;720;1320</pre>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Séparateurs acceptés : <code>;</code> · <code>,</code> · <code>tabulation</code>. Tu peux laisser le sal/fac vides (ils seront auto-remplis plus tard).</p>
+    <textarea id="carnet-bulk-input" placeholder="Colle ta liste ici…" style="width:100%;min-height:220px;padding:12px;border:1.5px solid var(--border);border-radius:11px;background:var(--bg-2);font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);outline:none;resize:vertical;line-height:1.5"></textarea>
+    <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="padding:11px 16px;font-size:13px;min-height:auto" onclick="openCarnet()">← Retour</button>
+      <button class="btn btn-primary" style="padding:11px 18px;font-size:13px;min-height:auto" onclick="processBulkAddCarnet()">✓ Ajouter au carnet</button>
+    </div>`;
+  showModal('+ Ajout en masse au carnet', html);
+}
+function processBulkAddCarnet(){
+  const ta = document.getElementById('carnet-bulk-input');
+  if(!ta) return;
+  const lines = ta.value.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
+  if(!lines.length){ alert('Aucune ligne à importer.'); return; }
+
+  let added=0, updated=0, skipped=0;
+  lines.forEach(line => {
+    const parts = line.split(/[;,\t]/).map(p => p.trim()).filter(p => p !== '');
+    const nom = (parts[0]||'').trim();
+    if(!nom){ skipped++; return; }
+    const sal = parts[1] !== undefined ? (parseFloat(parts[1].replace(',','.'))||0) : 0;
+    const fac = parts[2] !== undefined ? (parseFloat(parts[2].replace(',','.'))||0) : 0;
+    if(CARNET[nom]) updated++; else added++;
+    carnetUpsert(nom, sal, fac);
+  });
+
+  let msg = `✅ Carnet mis à jour\n\n${added} ajouté${added>1?'s':''}, ${updated} mis à jour`;
+  if(skipped) msg += `, ${skipped} ligne${skipped>1?'s':''} ignorée${skipped>1?'s':''} (vide)`;
+  alert(msg);
+  openCarnet();
+}
+function exportCarnetCSV(){
+  const names = Object.keys(CARNET).sort((a,b)=>a.localeCompare(b,'fr'));
+  if(!names.length){ alert('Le carnet est vide, rien à exporter.'); return; }
+  let csv = 'nom;salNetHebdo;factureHebdo;lastUsed\n';
+  names.forEach(n => {
+    const c = CARNET[n];
+    csv += `${n};${c.salNetHebdo};${c.factureHebdo};${c.lastUsed||''}\n`;
+  });
+  const blob = new Blob(["﻿"+csv], { type:'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `forma_carnet_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function addFromCarnet(nom){
   // Vérifier que pas déjà dans l'équipe du mois
   const existing = STATE.emps.find(e => e.nom === nom);

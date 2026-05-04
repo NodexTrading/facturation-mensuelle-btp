@@ -270,10 +270,12 @@ body{
   <div class="action-bar">
     <button class="btn btn-ghost" onclick="resetAll()">↺ Tout réinitialiser</button>
     <button class="btn btn-primary" onclick="window.open('https://calculateur-de-marge-ten.vercel.app/','_blank')" title="Le transfert se fait depuis le calculateur : ouvre-le, clique sur 📤 Facturation mensuelle, et l'équipe arrivera ici automatiquement">↗ Ouvrir le Calculateur de Marge</button>
+    <button class="btn btn-ghost" onclick="openCarnet()" title="Voir et gérer la liste des intérimaires connus (carnet persistant)">📚 Carnet</button>
     <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimer / PDF</button>
     <input type="file" id="csv-import-input" accept=".csv,.txt" style="display:none" onchange="onCSVImport(event)">
+    <datalist id="carnet-datalist"></datalist>
   </div>
 
   <!-- SETUP -->
@@ -376,6 +378,51 @@ const STATE = {
   ferieIdCtr: 1,
 };
 const STORAGE_KEY = 'forma_facturation_v2';
+const CARNET_KEY = 'forma_carnet_v1';
+
+/* ════════ CARNET — bibliothèque persistante d'intérimaires ════════ */
+function loadCarnet(){
+  try{
+    const raw = localStorage.getItem(CARNET_KEY);
+    if(!raw) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj==='object' ? obj : {};
+  }catch(e){ return {}; }
+}
+function saveCarnet(){
+  try{ localStorage.setItem(CARNET_KEY, JSON.stringify(CARNET)); }catch(e){}
+}
+let CARNET = loadCarnet();
+
+function carnetUpsert(nom, salNetHebdo, factureHebdo){
+  const cleanNom = (nom||'').trim();
+  if(!cleanNom) return;
+  const sal = parseFloat(salNetHebdo)||0;
+  const fac = parseFloat(factureHebdo)||0;
+  // Ne stocke que si au moins une valeur non nulle
+  if(sal === 0 && fac === 0 && !CARNET[cleanNom]) return;
+  CARNET[cleanNom] = {
+    salNetHebdo: sal || (CARNET[cleanNom]?.salNetHebdo || 0),
+    factureHebdo: fac || (CARNET[cleanNom]?.factureHebdo || 0),
+    lastUsed: new Date().toISOString().slice(0,7) // YYYY-MM
+  };
+  saveCarnet();
+  refreshCarnetDatalist();
+}
+function carnetRemove(nom){
+  delete CARNET[nom];
+  saveCarnet();
+  refreshCarnetDatalist();
+}
+function refreshCarnetDatalist(){
+  const dl = document.getElementById('carnet-datalist');
+  if(!dl) return;
+  const names = Object.keys(CARNET).sort((a,b) => a.localeCompare(b,'fr'));
+  dl.innerHTML = names.map(n => {
+    const c = CARNET[n];
+    return `<option value="${n.replace(/"/g,'&quot;')}">${c.salNetHebdo}€/sem · ${c.factureHebdo}€ fact.</option>`;
+  }).join('');
+}
 function saveStorage(){
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -448,8 +495,19 @@ function fillMois(){
 /* ════════ ÉQUIPE TABLE ════════ */
 function setEmpField(id, field, value){
   const e = STATE.emps.find(x=>x.id===id); if(!e) return;
-  if(field==='nom') e.nom = value;
-  else e[field] = parseFloat(value)||0;
+  if(field==='nom'){
+    e.nom = value;
+    // Si le nom existe dans le carnet et que sal/fac sont vides → auto-fill
+    const trimmed = (value||'').trim();
+    if(trimmed && CARNET[trimmed]){
+      if(!e.salNetHebdo) e.salNetHebdo = CARNET[trimmed].salNetHebdo || 0;
+      if(!e.factureHebdo) e.factureHebdo = CARNET[trimmed].factureHebdo || 0;
+    }
+  } else {
+    e[field] = parseFloat(value)||0;
+  }
+  // Mettre à jour le carnet
+  carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo);
   computeAndRenderTotals();
   saveStorage();
 }
@@ -501,7 +559,7 @@ function renderEmpTable(weeks){
     const fac = totJr * tjFac;
 
     body += `<tr>
-      <td><input class="t-input name" value="${e.nom.replace(/"/g,'&quot;')}" placeholder="Nom Prénom" oninput="setEmpField(${e.id},'nom',this.value)"></td>
+      <td><input class="t-input name" list="carnet-datalist" value="${e.nom.replace(/"/g,'&quot;')}" placeholder="Nom Prénom" oninput="setEmpField(${e.id},'nom',this.value)"></td>
       <td class="right"><input class="t-input eur" value="${e.salNetHebdo}" oninput="setEmpField(${e.id},'salNetHebdo',this.value)"></td>
       <td class="right"><input class="t-input eur" value="${e.factureHebdo}" oninput="setEmpField(${e.id},'factureHebdo',this.value)"></td>
       <td class="right">${f(tjNet)}</td>
@@ -675,6 +733,74 @@ function resetAll(){
   render();
 }
 
+/* ════════ MODAL CARNET ════════ */
+function openCarnet(){
+  const names = Object.keys(CARNET).sort((a,b)=>a.localeCompare(b,'fr'));
+  let body;
+  if(names.length === 0){
+    body = `<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:30px 0">
+      Le carnet est vide. Il se remplira automatiquement à chaque fois que tu ajoutes un intérimaire avec son salaire et tarif.
+    </p>`;
+  } else {
+    body = `<p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+      ${names.length} intérimaire${names.length>1?'s':''} en mémoire. Clique sur un nom pour l'ajouter au tableau.
+    </p>
+    <div style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:14px;background:var(--bg-2);padding:6px">`;
+    names.forEach(n => {
+      const c = CARNET[n];
+      body += `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border-radius:10px;margin-bottom:5px;border:1px solid var(--border)">
+        <button onclick="addFromCarnet('${n.replace(/'/g,"\\'")}')" title="Ajouter cet intérimaire au tableau du mois en cours" style="flex:1;text-align:left;background:transparent;border:0;padding:6px 4px;font-family:inherit;cursor:pointer;color:var(--text);font-size:14px;font-weight:600">
+          ${n}
+          <span style="display:block;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);margin-top:2px">${c.salNetHebdo} €/sem net · ${c.factureHebdo} €/sem fact. · vu ${c.lastUsed||'–'}</span>
+        </button>
+        <button onclick="if(confirm('Retirer ${n.replace(/'/g,"\\'")} du carnet ?')){carnetRemove('${n.replace(/'/g,"\\'")}');openCarnet();}" class="btn-icon" title="Supprimer du carnet">✕</button>
+      </div>`;
+    });
+    body += `</div>`;
+  }
+  showModal('📚 Carnet d\'intérimaires', body);
+}
+function addFromCarnet(nom){
+  // Vérifier que pas déjà dans l'équipe du mois
+  const existing = STATE.emps.find(e => e.nom === nom);
+  if(existing){
+    alert(nom + ' est déjà dans le tableau du mois en cours.');
+    return;
+  }
+  const c = CARNET[nom];
+  if(!c) return;
+  STATE.emps.push({
+    id: STATE.empIdCtr++,
+    nom: nom,
+    salNetHebdo: c.salNetHebdo || 0,
+    factureHebdo: c.factureHebdo || 0,
+    jours: {}
+  });
+  saveStorage();
+  render();
+  closeModal();
+}
+function showModal(title, bodyHTML){
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.id = 'modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,43,74,.55);backdrop-filter:blur(4px);z-index:200;display:grid;place-items:center;padding:20px;animation:fadeUp .2s';
+  overlay.onclick = e => { if(e.target === overlay) closeModal(); };
+  overlay.innerHTML = `
+    <div style="background:var(--card);border-radius:22px;border:1px solid var(--border);box-shadow:var(--shadow-lg);max-width:560px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column">
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+        <h2 style="font-size:17px;font-weight:700;color:var(--text);margin:0;flex:1">${title}</h2>
+        <button onclick="closeModal()" style="width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--bg-2);cursor:pointer;color:var(--text-muted);font-size:16px">✕</button>
+      </div>
+      <div style="padding:22px 24px;overflow-y:auto">${bodyHTML}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+function closeModal(){
+  const m = document.getElementById('modal-overlay');
+  if(m) m.remove();
+}
+
 /* ════════ IMPORT CSV — relevé d'heures P/A ════════ */
 function triggerImportCSV(){
   document.getElementById('csv-import-input').click();
@@ -734,10 +860,19 @@ function importPresenceCSV(text){
     const normNom = _normalizeName(nomRaw);
     let emp = STATE.emps.find(e => _normalizeName(e.nom) === normNom);
     if(!emp){
-      emp = { id: STATE.empIdCtr++, nom: nomRaw, salNetHebdo: 0, factureHebdo: 0, jours: {} };
+      // Avant de créer un emp vide, vérifier si on a ses infos dans le carnet
+      const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === normNom);
+      const carnetData = carnetMatch ? CARNET[carnetMatch] : null;
+      emp = {
+        id: STATE.empIdCtr++,
+        nom: carnetMatch || nomRaw,
+        salNetHebdo: carnetData ? carnetData.salNetHebdo : 0,
+        factureHebdo: carnetData ? carnetData.factureHebdo : 0,
+        jours: {}
+      };
       STATE.emps.push(emp);
       created++;
-      missingPresences.push(nomRaw);
+      if(!carnetMatch) missingPresences.push(nomRaw);
     } else {
       matched++;
     }
@@ -782,13 +917,14 @@ function importFromHash(){
     let added = 0;
     if(Array.isArray(data.emps)){
       data.emps.forEach(e => {
+        const nom = e.nom||'';
+        const salNetHebdo = parseFloat(e.salNetHebdo)||0;
+        const factureHebdo = parseFloat(e.factureHebdo)||0;
         STATE.emps.push({
           id: STATE.empIdCtr++,
-          nom: e.nom||'',
-          salNetHebdo: parseFloat(e.salNetHebdo)||0,
-          factureHebdo: parseFloat(e.factureHebdo)||0,
-          jours: {}
+          nom, salNetHebdo, factureHebdo, jours: {}
         });
+        carnetUpsert(nom, salNetHebdo, factureHebdo);
         added++;
       });
     }
@@ -816,6 +952,11 @@ function showImportBanner(count){
 
 /* ════════ INIT ════════ */
 loadStorage();
+// Hydrate le carnet depuis les emps déjà chargés (au cas où c'est la 1ʳᵉ ouverture après mise à jour)
+STATE.emps.forEach(e => {
+  if(e.nom && (e.salNetHebdo || e.factureHebdo)) carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo);
+});
+refreshCarnetDatalist();
 fillMois();
 // Synchroniser inputs avec STATE
 const _ch = document.getElementById('chantier');

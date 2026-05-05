@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Facturation Mensuelle BTP — Forma Intérim (Mockup v1 Forma)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f5f7;
+  --ink: #0a0a0a; --ink-2: #1f2024; --ink-3: #555a63; --muted: #8a8e96;
+  --line: #e8e9ec; --line-strong: #d2d4d9;
+  --forma-blue: #3DA5E0; --forma-blue-dark: #2987c0; --forma-blue-light: #6dbceb; --forma-blue-bg: #e8f4fc;
+  --forma-orange: #F39627; --forma-orange-dark: #d97e10; --forma-orange-light: #f8b765; --forma-orange-bg: #fef3e3;
+  --success: #16a34a; --success-bg: #dcfce7;
+  --warn: #d97706; --warn-bg: #fef3c7;
+  --danger: #dc2626; --danger-bg: #fee2e2;
+  --info: var(--forma-blue); --info-bg: var(--forma-blue-bg);
+  --grad-hero: linear-gradient(135deg, #3DA5E0 0%, #2987c0 60%, #1a6ea3 100%);
+  --grad-coral: linear-gradient(135deg, #F39627 0%, #f8b765 100%);
+  --grad-forma: linear-gradient(135deg, #3DA5E0 0%, #F39627 100%);
+  --shadow-sm: 0 1px 2px rgba(10,10,10,0.04);
+  --shadow: 0 1px 1px rgba(10,10,10,0.04), 0 2px 4px rgba(10,10,10,0.04), 0 4px 8px rgba(10,10,10,0.04);
+  --shadow-md: 0 1px 1px rgba(10,10,10,0.05), 0 2px 4px rgba(10,10,10,0.05), 0 8px 16px rgba(10,10,10,0.06), 0 16px 32px rgba(10,10,10,0.04);
+  --shadow-lg: 0 1px 2px rgba(10,10,10,0.06), 0 4px 8px rgba(10,10,10,0.06), 0 16px 32px rgba(10,10,10,0.08), 0 32px 64px rgba(10,10,10,0.06);
+  --r-sm: 8px; --r: 12px; --r-lg: 18px; --r-xl: 24px; --r-2xl: 32px;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration: 250ms; --duration-slow: 400ms;
+  --font-display: 'Bricolage Grotesque', -apple-system, sans-serif;
+  --font-body: 'Instrument Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body); font-size: 15px; line-height: 1.55; color: var(--ink);
+  background:
+    linear-gradient(165deg, rgba(61,165,224,0.18) 0%, rgba(61,165,224,0.08) 25%, rgba(255,253,250,1) 55%, rgba(243,150,39,0.10) 85%, rgba(243,150,39,0.20) 100%),
+    radial-gradient(ellipse 900px 700px at 85% 15%, rgba(61,165,224,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 700px 600px at 15% 90%, rgba(243,150,39,0.16) 0%, transparent 55%),
+    #f8f5f0;
+  background-attachment: fixed; min-height: 100vh;
+  -webkit-font-smoothing: antialiased; letter-spacing: -0.011em;
+}
+.app { max-width: 1380px; margin: 0 auto; padding: 32px 24px 96px; }
+
+/* HEADER */
+.app-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; margin-bottom: 36px; flex-wrap: wrap; }
+.brand { display: flex; flex-direction: column; gap: 4px; }
+.brand-logo { display: inline-flex; align-items: center; gap: 14px; font-family: var(--font-display); font-weight: 700; font-size: 26px; letter-spacing: -0.01em; margin-bottom: 12px; }
+.brand-logo .mark { width: 56px; height: 56px; background: #000; border-radius: 14px; display: grid; place-items: center; padding: 6px; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1); }
+.brand-logo .mark img { width: 100%; height: 100%; object-fit: contain; filter: brightness(0) invert(1); }
+.brand-logo .forma { color: var(--forma-blue); }
+.brand-logo .interim { color: var(--forma-orange); }
+.brand h1 { font-family: var(--font-display); font-size: 42px; font-weight: 700; line-height: 1.02; letter-spacing: -0.035em; color: var(--ink); max-width: 720px; }
+.brand h1 em { font-style: italic; color: var(--forma-blue); font-weight: 600; }
+.brand-tag { font-size: 14px; color: var(--ink-3); margin-top: 10px; max-width: 600px; }
+
+/* Action bar */
+.action-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; }
+.btn { font-family: var(--font-body); font-size: 14px; font-weight: 600; padding: 11px 20px; border: 1px solid transparent; border-radius: 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; position: relative; overflow: hidden; isolation: isolate; transition: transform 0.18s var(--ease-spring), box-shadow 0.25s ease; }
+.btn::before { content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.12) 35%, rgba(255,255,255,0) 60%, rgba(0,0,0,0.08) 100%); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; z-index: 2; }
+.btn::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%); transform: translateX(-100%); transition: transform 0.65s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none; z-index: 1; }
+.btn:hover::after { transform: translateX(100%); }
+.btn:active { transform: scale(0.98); }
+.btn span, .btn .icon { position: relative; z-index: 3; }
+.btn-primary { background: linear-gradient(180deg, rgba(20,20,22,0.95), rgba(10,10,10,0.98)); color: white; box-shadow: 0 4px 14px rgba(10,10,10,0.25); }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(10,10,10,0.30); }
+.btn-accent { background: var(--grad-coral); color: white; box-shadow: 0 4px 14px rgba(243,150,39,0.30); }
+.btn-accent:hover { transform: translateY(-1px); }
+.btn-ghost { background: rgba(255,255,255,0.6); color: var(--ink); border: 1px solid var(--line); backdrop-filter: blur(10px); }
+.btn-ghost:hover { background: rgba(255,255,255,0.95); border-color: var(--line-strong); }
+
+/* Info banner */
+.info-banner { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; background: var(--info-bg); border: 1px solid color-mix(in srgb, var(--forma-blue) 25%, transparent); border-radius: var(--r); font-size: 13px; color: var(--ink-2); margin-bottom: 22px; }
+.info-banner strong { color: var(--ink); }
+
+/* Cards Glass */
+.card { background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 0.5px solid rgba(255, 255, 255, 0.8); border-radius: var(--r-lg); padding: 24px; margin-bottom: 22px; box-shadow: 0 0 0 0.5px rgba(10,10,10,0.04), 0 1px 2px rgba(10,10,10,0.04), 0 4px 12px rgba(10,10,10,0.04), inset 0 1px 0 rgba(255,255,255,0.9); transition: box-shadow 0.3s var(--ease-out); }
+.card:hover { box-shadow: 0 0 0 0.5px rgba(10,10,10,0.05), 0 2px 4px rgba(10,10,10,0.04), 0 8px 24px rgba(10,10,10,0.06), inset 0 1px 0 rgba(255,255,255,0.95); }
+.card-title { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.015em; display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.card-title .num { width: 26px; height: 26px; border-radius: 50%; background: var(--grad-hero); color: white; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.card-title.accent .num { background: var(--grad-coral); }
+.card-title.success .num { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.card-title .head-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-family: var(--font-body); }
+
+/* Setup */
+.setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); }
+.input { width: 100%; padding: 12px 14px; font-family: var(--font-body); font-size: 15px; font-weight: 500; background: rgba(255,255,255,0.7); border: 1.5px solid var(--line); border-radius: 12px; color: var(--ink); outline: none; transition: all 0.2s; }
+.input:focus { border-color: var(--forma-blue); background: white; box-shadow: 0 0 0 4px rgba(61,165,224,0.15); }
+
+/* Btn mini */
+.btn-mini { font-family: inherit; font-size: 12px; font-weight: 600; padding: 7px 13px; border-radius: 9px; border: 1px solid var(--line); background: white; color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all .15s; }
+.btn-mini:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.btn-mini.add { background: var(--forma-blue-bg); border-color: color-mix(in srgb, var(--forma-blue) 25%, transparent); color: var(--forma-blue-dark); }
+.btn-mini.add:hover { background: var(--forma-blue); color: white; }
+
+/* Équipe table */
+.eq-wrap { overflow-x: auto; border-top: 1px solid var(--line); margin: 0 -24px -24px; }
+.eq-table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: var(--font-mono); }
+.eq-table thead th { text-align: left; padding: 11px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); background: var(--surface-2); border-bottom: 1.5px solid var(--line); white-space: nowrap; font-family: var(--font-body); }
+.eq-table thead th.right { text-align: right; }
+.eq-table thead th.center { text-align: center; }
+.eq-table thead th.week { color: var(--forma-blue-dark); text-align: center; }
+.eq-table thead th.salaire { color: var(--ink); text-align: right; }
+.eq-table thead th.facture { color: var(--forma-orange-dark); text-align: right; }
+.eq-table thead th:first-child { padding-left: 24px; }
+.eq-table thead th:last-child { padding-right: 24px; }
+.eq-table tbody td { padding: 12px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.eq-table tbody td.right { text-align: right; }
+.eq-table tbody td.center { text-align: center; }
+.eq-table tbody td:first-child { padding-left: 24px; }
+.eq-table tbody td:last-child { padding-right: 24px; }
+.eq-table tbody tr:hover { background: rgba(61,165,224,0.04); }
+.eq-table .name-cell { font-family: var(--font-body); font-weight: 600; color: var(--ink); }
+.eq-table .euro { color: var(--forma-orange-dark); font-weight: 600; }
+.eq-table .euro.muted { color: var(--ink-3); font-weight: 500; }
+.eq-table .salaire-val { color: var(--ink); font-weight: 700; }
+.eq-table .facture-val { color: var(--forma-orange-dark); font-weight: 700; }
+
+.input-tiny { width: 50px; padding: 5px 6px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); }
+.input-tiny:focus { border-color: var(--forma-blue); outline: none; }
+.input-tiny.day { width: 40px; }
+
+.row-tot { background: var(--forma-orange-bg); font-weight: 800; }
+.row-tot td { border-top: 1.5px solid var(--forma-orange); padding-top: 14px; padding-bottom: 14px; color: var(--forma-orange-dark); }
+
+.btn-icon { width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--muted); cursor: pointer; font-size: 11px; transition: all .15s; }
+.btn-icon:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
+
+/* Hero result mensuel */
+.hero-result { position: relative; background: #000; background-image: radial-gradient(ellipse 90% 60% at 0% 0%, rgba(61,165,224,0.55), transparent 60%), radial-gradient(ellipse 70% 50% at 100% 100%, rgba(243,150,39,0.40), transparent 60%), radial-gradient(ellipse 60% 40% at 100% 0%, rgba(61,165,224,0.30), transparent 70%), radial-gradient(ellipse 50% 50% at 0% 100%, rgba(243,150,39,0.25), transparent 60%); color: white; border-radius: var(--r-2xl); padding: 36px 40px; overflow: hidden; box-shadow: var(--shadow-lg); margin-bottom: 22px; }
+.hero-result::before { content: ''; position: absolute; inset: -20%; background: radial-gradient(ellipse 40% 50% at 30% 40%, rgba(61,165,224,0.35), transparent 50%), radial-gradient(ellipse 35% 40% at 75% 65%, rgba(243,150,39,0.30), transparent 50%); filter: blur(40px); animation: aurora 20s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes aurora { 0% { transform: translate(0,0) scale(1); } 50% { transform: translate(2%,-2%) scale(1.05); } 100% { transform: translate(-1%,1%) scale(0.98); } }
+.hero-result::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 100%); pointer-events: none; }
+.hero-result > * { position: relative; z-index: 2; }
+.hero-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 32px; align-items: center; }
+.hero-block { padding: 0 24px; }
+.hero-block + .hero-block { border-left: 1px solid rgba(255,255,255,0.15); }
+.hero-block .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.6; margin-bottom: 10px; font-weight: 600; }
+.hero-block .value { font-family: var(--font-display); font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+.hero-block.main .value { font-size: 60px; font-weight: 800; letter-spacing: -0.04em; }
+.hero-block .currency { font-size: 0.5em; opacity: 0.7; margin-left: 6px; }
+.hero-block .sub { font-size: 12px; margin-top: 10px; opacity: 0.7; }
+
+/* Carnet preview chip */
+.carnet-info { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); padding: 6px 10px; background: rgba(255,255,255,0.7); border-radius: 99px; border: 1px solid var(--line); }
+.carnet-info strong { color: var(--forma-blue); font-weight: 700; }
+
+@media (max-width: 1024px) {
+  .setup-grid { grid-template-columns: 1fr; }
+  .hero-grid { grid-template-columns: 1fr; gap: 24px; }
+  .hero-block { padding: 0; }
+  .hero-block + .hero-block { border-left: 0; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 24px; }
+}
+@media (max-width: 640px) {
+  .brand h1 { font-size: 30px; }
+  .hero-block.main .value { font-size: 44px; }
+}
+</style>
+</head>
+<body>
+
+<main class="app">
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-logo">
+        <span class="mark"><img src="../public/brand/forma-mark.png" alt=""></span>
+        <span><span class="forma">FORMA</span> <span class="interim">INTERIM</span></span>
+      </div>
+      <h1>Facturation <em>mensuelle</em> BTP</h1>
+      <p class="brand-tag">Convertis ton équipe hebdo en facturation mensuelle prête à transmettre à la paie et au client.</p>
+    </div>
+  </header>
+
+  <!-- INFO -->
+  <div class="info-banner">
+    <span style="font-size:18px">💡</span>
+    <span><strong>Comment ça marche.</strong> Renseigne ton chantier et le mois. Ajoute les intérimaires depuis le carnet ou via le calculateur (📤). Saisis le nombre de jours travaillés par semaine. L'app calcule en live le salaire net mensuel et la facture client.</span>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div class="action-bar">
+    <button class="btn btn-ghost"><span>↺ Réinitialiser</span></button>
+    <button class="btn btn-ghost"><span>📚 Carnet (24)</span></button>
+    <button class="btn btn-primary"><span>📥 Importer relevé d'heures</span></button>
+    <button class="btn btn-accent"><span>📊 Exporter Excel</span></button>
+    <button class="btn btn-ghost"><span>🖨️ Imprimer / PDF</span></button>
+    <span style="margin-left:auto" class="carnet-info">📚 Carnet : <strong>24 intérimaires</strong> en mémoire</span>
+  </div>
+
+  <!-- SETUP -->
+  <section class="card">
+    <header class="card-title"><span class="num">1</span> Chantier &amp; période</header>
+    <div class="setup-grid">
+      <div class="field">
+        <span class="field-label">Nom du chantier</span>
+        <input class="input" value="ACTIBAT — Bois sacré actibat Leonardo">
+      </div>
+      <div class="field">
+        <span class="field-label">Mois à facturer</span>
+        <select class="input">
+          <option>Avril 2026</option>
+          <option>Mai 2026</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <!-- ÉQUIPE -->
+  <section class="card">
+    <header class="card-title">
+      <span class="num">2</span> Équipe du mois
+      <div class="head-actions">
+        <span style="font-size:12px;color:var(--ink-3);font-weight:500">3 intérimaires</span>
+        <button class="btn-mini add">+ Ajouter intérimaire</button>
+        <button class="btn-mini">📚 Depuis le carnet</button>
+      </div>
+    </header>
+
+    <div class="eq-wrap">
+      <table class="eq-table">
+        <thead>
+          <tr>
+            <th>Nom / Prénom</th>
+            <th class="right">Sal. net hebdo</th>
+            <th class="right">Fact. hebdo</th>
+            <th class="right">€/J net</th>
+            <th class="right">€/J fact.</th>
+            <th class="week">S14</th>
+            <th class="week">S15</th>
+            <th class="week">S16</th>
+            <th class="week">S17</th>
+            <th class="week">S18</th>
+            <th class="center">Total/JR</th>
+            <th class="salaire">SALAIRE</th>
+            <th class="facture">FACTURE</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="name-cell">Pereira Varela Edgar</span></td>
+            <td class="right euro">850,00 €</td>
+            <td class="right euro">1 547,00 €</td>
+            <td class="right euro muted">170,00 €</td>
+            <td class="right euro muted">309,40 €</td>
+            <td class="center"><input class="input-tiny day" value="3"></td>
+            <td class="center"><input class="input-tiny day" value="4"></td>
+            <td class="center"><input class="input-tiny day" value="5"></td>
+            <td class="center"><input class="input-tiny day" value="5"></td>
+            <td class="center"><input class="input-tiny day" value="0"></td>
+            <td class="center" style="font-weight:700">17</td>
+            <td class="right salaire-val">2 890,00 €</td>
+            <td class="right facture-val">5 259,80 €</td>
+            <td><button class="btn-icon">✕</button></td>
+          </tr>
+          <tr>
+            <td><span class="name-cell">Borges Sanches Roberlo Augusto</span></td>
+            <td class="right euro">850,00 €</td>
+            <td class="right euro">1 547,00 €</td>
+            <td class="right euro muted">170,00 €</td>
+            <td class="right euro muted">309,40 €</td>
+            <td class="center"><input class="input-tiny day" value="3"></td>
+            <td class="center"><input class="input-tiny day" value="4"></td>
+            <td class="center"><input class="input-tiny day" value="5"></td>
+            <td class="center"><input class="input-tiny day" value="5"></td>
+            <td class="center"><input class="input-tiny day" value="0"></td>
+            <td class="center" style="font-weight:700">17</td>
+            <td class="right salaire-val">2 890,00 €</td>
+            <td class="right facture-val">5 259,80 €</td>
+            <td><button class="btn-icon">✕</button></td>
+          </tr>
+          <tr>
+            <td><span class="name-cell">Diallo Mamadou</span></td>
+            <td class="right euro">720,00 €</td>
+            <td class="right euro">1 320,00 €</td>
+            <td class="right euro muted">144,00 €</td>
+            <td class="right euro muted">264,00 €</td>
+            <td class="center"><input class="input-tiny day" value="0"></td>
+            <td class="center"><input class="input-tiny day" value="5"></td>
+            <td class="center"><input class="input-tiny day" value="5"></td>
+            <td class="center"><input class="input-tiny day" value="5"></td>
+            <td class="center"><input class="input-tiny day" value="4"></td>
+            <td class="center" style="font-weight:700">19</td>
+            <td class="right salaire-val">2 736,00 €</td>
+            <td class="right facture-val">5 016,00 €</td>
+            <td><button class="btn-icon">✕</button></td>
+          </tr>
+          <tr class="row-tot">
+            <td colspan="10">TOTAL — 3 intérimaires</td>
+            <td class="center">53 jours</td>
+            <td class="right">8 516,00 €</td>
+            <td class="right">15 535,60 €</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- FÉRIÉS -->
+  <section class="card">
+    <header class="card-title accent">
+      <span class="num">3</span> Heures fériées (optionnel)
+      <div class="head-actions">
+        <button class="btn-mini add">+ Ajouter ligne férié</button>
+      </div>
+    </header>
+    <div class="eq-wrap">
+      <table class="eq-table">
+        <thead>
+          <tr>
+            <th>Intérimaire</th>
+            <th class="center">Heures</th>
+            <th class="right">Taux salaire €/h</th>
+            <th class="right">Taux facture €/h</th>
+            <th class="salaire">SALAIRE</th>
+            <th class="facture">FACTURE</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="name-cell">Pereira Varela Edgar</span></td>
+            <td class="center"><input class="input-tiny day" value="7"></td>
+            <td class="right"><input class="input-tiny" value="24,74" style="width:70px"></td>
+            <td class="right"><input class="input-tiny" value="45,03" style="width:70px"></td>
+            <td class="right salaire-val">173,18 €</td>
+            <td class="right facture-val">315,21 €</td>
+            <td><button class="btn-icon">✕</button></td>
+          </tr>
+          <tr class="row-tot">
+            <td colspan="4">TOTAL férié</td>
+            <td class="right">173,18 €</td>
+            <td class="right">315,21 €</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- HERO RESULT -->
+  <section class="hero-result">
+    <div class="hero-grid">
+      <div class="hero-block">
+        <div class="label">Salaires nets totaux</div>
+        <div class="value">8 689<span class="currency">,18 €</span></div>
+        <div class="sub">à transmettre à la paie</div>
+      </div>
+      <div class="hero-block">
+        <div class="label">Heures fériées</div>
+        <div class="value">173<span class="currency">,18 €</span></div>
+        <div class="sub">salaire / 315,21 € facture</div>
+      </div>
+      <div class="hero-block main">
+        <div class="label" style="color:#fbbf24">Facture client TOTAL</div>
+        <div class="value">15 850<span class="currency">,81 €</span></div>
+        <div class="sub">à envoyer au client ACTIBAT</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

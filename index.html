@@ -617,6 +617,7 @@ body {
     <button class="btn btn-primary" onclick="window.open('https://calculateur-de-marge-ten.vercel.app/','_blank')" title="Le transfert se fait depuis le calculateur : ouvre-le, clique sur 📤 Facturation mensuelle, et l'équipe arrivera ici automatiquement">↗ Ouvrir le Calculateur de Marge</button>
     <button class="btn btn-ghost" onclick="openCarnet()" title="Voir et gérer la liste des intérimaires connus (carnet persistant)">📚 Carnet</button>
     <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
+    <button class="btn btn-ghost" onclick="loadTestJDSMars2026()" title="Charge le test mars 2026 (chantier JDS / LE BAIA, 9 intérimaires, 5 semaines, calcul automatique)">🧪 Charger test JDS mars 2026</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimer / PDF</button>
     <input type="file" id="csv-import-input" accept=".csv,.txt" style="display:none" onchange="onCSVImport(event)">
@@ -1102,6 +1103,7 @@ function openCarnet(){
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn btn-primary" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="openCarnetBulkAdd()">+ Ajout en masse</button>
       <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="exportCarnetCSV()">📤 Exporter (CSV)</button>
+      <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto;color:#c93030;border-color:rgba(201,48,48,.35)" onclick="clearCarnetAll()">🗑️ Supprimer tout</button>
     </div>`;
 
   if(names.length === 0){
@@ -1313,6 +1315,87 @@ function processBulkAddCarnet(){
   alert(msg);
   openCarnet();
 }
+function loadTestJDSMars2026(){
+  // Test complet : chantier JDS / LE BAIA, mars 2026, 9 intérimaires avec leurs jours par semaine
+  // Données issues du relevé d'heures « relever test 2.pdf » (heures totales / 8 → jours, arrondi)
+  const test = {
+    chantier: 'JDS — LE BAIA',
+    year: 2026,
+    month: 2, // mars (0-indexé)
+    emps: [
+      { nom:'SANCHES FURTADO MIGUEL',          salNetHebdo:1000, factureHebdo:1820, jours:{10:5, 11:5, 12:5, 13:5, 14:2} },
+      { nom:'SEMEDO MOREIRA JOSE CLAUDIO',     salNetHebdo:900,  factureHebdo:1638, jours:{10:4, 11:5, 12:5, 13:4, 14:2} },
+      { nom:'COELHO DOS SANTOS NEILSON',       salNetHebdo:650,  factureHebdo:1183, jours:{10:5, 11:5, 12:5, 13:5, 14:2} },
+      { nom:'GONCALVES SILVA JOSE DOMINGOS',   salNetHebdo:900,  factureHebdo:1638, jours:{10:0, 11:0, 12:0, 13:5, 14:2} },
+      { nom:'LOPES DIAS MANUEL ANTONIO',       salNetHebdo:750,  factureHebdo:1365, jours:{10:1, 11:5, 12:5, 13:5, 14:0} },
+      { nom:'LOPES TAVARES JOSE CARLOS',       salNetHebdo:700,  factureHebdo:1274, jours:{10:4, 11:0, 12:0, 13:0, 14:0} },
+      { nom:'TAVARES DE BARROS JOSE EVANILDO', salNetHebdo:650,  factureHebdo:1183, jours:{10:1, 11:0, 12:0, 13:0, 14:1} },
+      { nom:'CORREIA DE PINA GELSON PEDRINO',  salNetHebdo:950,  factureHebdo:1729, jours:{10:1, 11:0, 12:0, 13:0, 14:0} },
+      { nom:'MORENO DE PINA EDMILSON',         salNetHebdo:900,  factureHebdo:1638, jours:{10:0, 11:0, 12:0, 13:0, 14:1} },
+    ]
+  };
+
+  const hasData = STATE.emps.length > 0 || (STATE.chantier && STATE.chantier !== 'ACTIBAT — Bois sacré actibat Leonardo');
+  if(hasData && !confirm('Cela va REMPLACER le tableau du mois en cours (chantier, mois, intérimaires).\n\nContinuer ?')) return;
+
+  // 1) Chantier + période
+  STATE.chantier = test.chantier;
+  STATE.year = test.year;
+  STATE.month = test.month;
+  STATE.emps = [];
+  STATE.feries = [];
+
+  // 2) Intérimaires + jours par semaine (en utilisant le carnet pour récupérer les tarifs si déjà saisi)
+  test.emps.forEach(t => {
+    const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === _normalizeName(t.nom));
+    const carnetData = carnetMatch ? CARNET[carnetMatch] : null;
+    STATE.emps.push({
+      id: STATE.empIdCtr++,
+      nom: carnetMatch || t.nom,
+      salNetHebdo: carnetData?.salNetHebdo || t.salNetHebdo,
+      factureHebdo: carnetData?.factureHebdo || t.factureHebdo,
+      jours: { ...t.jours }
+    });
+    // Hydrate aussi le carnet pour les fois suivantes (sans entreprise pour ne pas écraser)
+    carnetUpsert(t.nom, t.salNetHebdo, t.factureHebdo, 'JDS');
+  });
+
+  // 3) Synchronise les inputs visibles
+  const _ch = document.getElementById('chantier');
+  if(_ch) _ch.value = STATE.chantier;
+  const _ms = document.getElementById('mois');
+  if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
+
+  // 4) Sauve + render → calcul automatique
+  saveStorage();
+  render();
+
+  // 5) Récap chiffré
+  let totalSal = 0, totalFac = 0, totalJr = 0;
+  STATE.emps.forEach(e => {
+    let jr = 0;
+    Object.values(e.jours).forEach(v => jr += (parseInt(v)||0));
+    totalJr += jr;
+    totalSal += jr * (e.salNetHebdo/5);
+    totalFac += jr * (e.factureHebdo/5);
+  });
+  const fmt = n => n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €';
+  alert(`✅ Test mars 2026 chargé\n\n  Chantier : JDS — LE BAIA\n  9 intérimaires sur 5 semaines (S10→S14)\n\n  Total jours travaillés : ${totalJr}\n  Salaires nets : ${fmt(totalSal)}\n  Facture client : ${fmt(totalFac)}\n  Marge brute : ${fmt(totalFac - totalSal)}`);
+}
+
+function clearCarnetAll(){
+  const total = Object.keys(CARNET).length;
+  if(total === 0){ alert('Le carnet est déjà vide.'); return; }
+  if(!confirm(`⚠️ Supprimer définitivement les ${total} intérimaire${total>1?'s':''} du carnet ?\n\nCette action est irréversible. Le tableau du mois en cours n'est pas affecté, mais tous les tarifs pré-enregistrés seront perdus.`)) return;
+  // 2ᵉ confirmation pour les gros carnets
+  if(total >= 10 && !confirm(`Vraiment ? Tape OK pour confirmer la suppression de ${total} entrées.`)) return;
+  CARNET = {};
+  saveCarnet();
+  refreshCarnetDatalist();
+  alert(`✅ Carnet vidé (${total} entrée${total>1?'s':''} supprimée${total>1?'s':''}).`);
+  openCarnet();
+}
+
 function exportCarnetCSV(){
   const names = Object.keys(CARNET).sort((a,b) => {
     const ea = (CARNET[a].entreprise||'').localeCompare(CARNET[b].entreprise||'','fr');

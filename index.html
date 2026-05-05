@@ -1183,8 +1183,17 @@ function renderCarnetList(){
 
   let html = '';
   groupKeys.forEach(g => {
-    html += `<div style="padding:8px 10px 4px 10px;font-size:11px;font-weight:700;color:var(--forma-blue);text-transform:uppercase;letter-spacing:.5px">
-      🏢 ${_esc(g)} <span style="color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0">· ${groups[g].length}</span>
+    const groupCount = groups[g].length;
+    const isNoneGroup = g.startsWith('—');
+    // Pour le bouton "Ajouter tous", on a besoin de la valeur réelle d'entreprise (pas le label affiché)
+    const addAllArg = isNoneGroup ? '' : g;
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:10px 10px 6px 10px;font-size:11px;font-weight:700;color:var(--forma-blue);text-transform:uppercase;letter-spacing:.5px">
+      <span style="flex:1">🏢 ${_esc(g)} <span style="color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0">· ${groupCount}</span></span>
+      <button onclick="addAllFromCarnetEntreprise('${_jsq(addAllArg)}')"
+        title="Ajouter d'un coup les ${groupCount} intérimaire${groupCount>1?'s':''} au tableau du mois en cours"
+        style="padding:5px 10px;font-size:11px;font-weight:600;background:var(--forma-blue);color:#fff;border:0;border-radius:7px;cursor:pointer;text-transform:none;letter-spacing:0;white-space:nowrap">
+        + Tous (${groupCount})
+      </button>
     </div>`;
     groups[g].forEach(n => {
       const c = CARNET[n];
@@ -1343,6 +1352,46 @@ function addFromCarnet(nom){
   saveStorage();
   render();
   closeModal();
+}
+
+function addAllFromCarnetEntreprise(entreprise){
+  // entreprise = '' signifie "sans entreprise"
+  const target = (entreprise||'').trim();
+  const matchingNames = Object.keys(CARNET)
+    .filter(n => ((CARNET[n].entreprise||'').trim()) === target)
+    .sort((a,b)=>a.localeCompare(b,'fr'));
+
+  if(!matchingNames.length){
+    alert('Aucun intérimaire dans cette entreprise.');
+    return;
+  }
+
+  const label = target || 'Sans entreprise';
+  if(!confirm(`Ajouter les ${matchingNames.length} intérimaire${matchingNames.length>1?'s':''} de « ${label} » au tableau du mois en cours ?`)){
+    return;
+  }
+
+  let added = 0, skipped = 0;
+  matchingNames.forEach(n => {
+    if(STATE.emps.find(e => e.nom === n)){ skipped++; return; }
+    const c = CARNET[n];
+    STATE.emps.push({
+      id: STATE.empIdCtr++,
+      nom: n,
+      salNetHebdo: c.salNetHebdo || 0,
+      factureHebdo: c.factureHebdo || 0,
+      jours: {}
+    });
+    added++;
+  });
+  saveStorage();
+  render();
+
+  let msg = `✅ ${added} intérimaire${added>1?'s':''} ajouté${added>1?'s':''} de « ${label} »`;
+  if(skipped) msg += `\n   (${skipped} déjà présent${skipped>1?'s':''}, ignoré${skipped>1?'s':''})`;
+  alert(msg);
+  // On reste dans le carnet pour permettre d'ajouter une autre entreprise dans la foulée
+  renderCarnetList();
 }
 function showModal(title, bodyHTML){
   closeModal();

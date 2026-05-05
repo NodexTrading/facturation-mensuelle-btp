@@ -1519,6 +1519,15 @@ function _normalizeName(s){
     .replace(/\s+/g,' ')
     .trim();
 }
+function _isoWeekToThursday(year, week){
+  // Le jeudi d'une semaine ISO appartient toujours au mois de référence ISO
+  const jan4 = new Date(year, 0, 4);
+  const jan4Dow = jan4.getDay() || 7; // 1=Lun, ..., 7=Dim
+  const week1Mon = new Date(year, 0, 4 - (jan4Dow - 1));
+  const thursday = new Date(week1Mon);
+  thursday.setDate(week1Mon.getDate() + (week-1)*7 + 3);
+  return thursday;
+}
 function importPresenceCSV(text){
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
   if(!lines.length){ alert('Fichier vide.'); return; }
@@ -1547,6 +1556,28 @@ function importPresenceCSV(text){
     return;
   }
 
+  // Bascule automatique sur le bon mois selon les semaines du CSV
+  // (sinon les jours sont stockés mais pas affichés car les colonnes du mois en cours ne matchent pas)
+  const weeksFound = weekCols.map(w => w.week);
+  const monthVotes = {};
+  weeksFound.forEach(w => {
+    const thu = _isoWeekToThursday(STATE.year, w);
+    const key = thu.getFullYear() + '-' + thu.getMonth();
+    monthVotes[key] = (monthVotes[key]||0) + 1;
+  });
+  const winner = Object.entries(monthVotes).sort((a,b) => b[1]-a[1])[0];
+  let switchedTo = null;
+  if(winner){
+    const [winY, winM] = winner[0].split('-').map(Number);
+    if(winY !== STATE.year || winM !== STATE.month){
+      STATE.year = winY;
+      STATE.month = winM;
+      const _ms = document.getElementById('mois');
+      if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
+      switchedTo = `${monthName(winM)} ${winY}`;
+    }
+  }
+
   let matched=0, created=0, missingPresences=[];
   for(let i=1; i<lines.length; i++){
     const cols = split(lines[i]);
@@ -1572,10 +1603,30 @@ function importPresenceCSV(text){
     } else {
       matched++;
     }
-    // Pour chaque semaine : compter les P
+    // Pour chaque semaine : accepte (1) un nombre direct (ex: "5"), (2) un code P/A (ex: "PPPPA"), (3) un nombre d'heures avec h (ex: "39h45" → /8 arrondi)
     weekCols.forEach(({col, week}) => {
-      const code = (cols[col]||'').toUpperCase().replace(/\s+/g,'');
-      if(!code || code === '-') return; // pas en mission cette semaine
+      const raw = (cols[col]||'').trim();
+      if(!raw || raw === '-') return;
+      const code = raw.toUpperCase().replace(/\s+/g,'');
+
+      // Cas 1 : valeur numérique entière directe (ex: "5", "0", "2")
+      if(/^\d+$/.test(code)){
+        emp.jours[week] = Math.max(0, Math.min(7, parseInt(code, 10)));
+        return;
+      }
+      // Cas 2 : valeur décimale (ex: "4.5") → arrondi
+      if(/^\d+[.,]\d+$/.test(code)){
+        emp.jours[week] = Math.max(0, Math.min(7, Math.round(parseFloat(code.replace(',','.')))));
+        return;
+      }
+      // Cas 3 : nombre d'heures (ex: "39h", "39h45", "39H30") → ÷8h, arrondi à l'entier
+      const mh = code.match(/^(\d+)H(\d{0,2})?$/);
+      if(mh){
+        const hours = parseInt(mh[1],10) + (parseInt(mh[2]||'0',10)/60);
+        emp.jours[week] = Math.max(0, Math.min(7, Math.round(hours/8)));
+        return;
+      }
+      // Cas 4 (par défaut) : code P/A → compte les P
       const nbP = (code.match(/P/g) || []).length;
       emp.jours[week] = Math.max(0, Math.min(7, nbP));
     });
@@ -1585,6 +1636,9 @@ function importPresenceCSV(text){
   render();
 
   let msg = `✅ Import terminé\n\n${matched} intérimaire${matched>1?'s':''} mis à jour`;
+  if(switchedTo){
+    msg += `\n📅 Mois basculé automatiquement sur ${switchedTo} (selon les semaines du CSV)`;
+  }
   if(created > 0){
     msg += `\n⚠️  ${created} intérimaire${created>1?'s':''} créé${created>1?'s':''} automatiquement (salaire/facture vides à renseigner) :\n   • ` + missingPresences.slice(0,8).join('\n   • ');
     if(missingPresences.length > 8) msg += `\n   … et ${missingPresences.length-8} de plus`;

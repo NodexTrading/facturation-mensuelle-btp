@@ -739,18 +739,32 @@ function saveCarnet(){
 }
 let CARNET = loadCarnet();
 
-function carnetUpsert(nom, salNetHebdo, factureHebdo){
+function carnetUpsert(nom, salNetHebdo, factureHebdo, entreprise){
   const cleanNom = (nom||'').trim();
   if(!cleanNom) return;
   const sal = parseFloat(salNetHebdo)||0;
   const fac = parseFloat(factureHebdo)||0;
-  // Ne stocke que si au moins une valeur non nulle
-  if(sal === 0 && fac === 0 && !CARNET[cleanNom]) return;
+  const ent = (entreprise||'').toString().trim();
+  // Ne stocke que si au moins une valeur non nulle, ou si l'entrée existe déjà
+  if(sal === 0 && fac === 0 && !ent && !CARNET[cleanNom]) return;
   CARNET[cleanNom] = {
     salNetHebdo: sal || (CARNET[cleanNom]?.salNetHebdo || 0),
     factureHebdo: fac || (CARNET[cleanNom]?.factureHebdo || 0),
+    entreprise: ent || (CARNET[cleanNom]?.entreprise || ''),
     lastUsed: new Date().toISOString().slice(0,7) // YYYY-MM
   };
+  saveCarnet();
+  refreshCarnetDatalist();
+}
+function carnetSetEntreprise(nom, entreprise){
+  if(!CARNET[nom]) return;
+  CARNET[nom].entreprise = (entreprise||'').toString().trim();
+  saveCarnet();
+}
+function carnetSetRates(nom, salNetHebdo, factureHebdo){
+  if(!CARNET[nom]) return;
+  CARNET[nom].salNetHebdo = parseFloat(salNetHebdo)||0;
+  CARNET[nom].factureHebdo = parseFloat(factureHebdo)||0;
   saveCarnet();
   refreshCarnetDatalist();
 }
@@ -1079,48 +1093,186 @@ function resetAll(){
 }
 
 /* ════════ MODAL CARNET ════════ */
+const _esc = (s) => (s||'').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const _jsq = (s) => (s||'').toString().replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+
 function openCarnet(){
   const names = Object.keys(CARNET).sort((a,b)=>a.localeCompare(b,'fr'));
   const topActions = `
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn btn-primary" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="openCarnetBulkAdd()">+ Ajout en masse</button>
       <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="exportCarnetCSV()">📤 Exporter (CSV)</button>
     </div>`;
-  let body;
+
   if(names.length === 0){
-    body = topActions + `<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:24px 0">
+    const empty = topActions + `<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:24px 0">
       Le carnet est vide. Tu peux le pré-remplir avec <strong>+ Ajout en masse</strong>, ou laisse-le se remplir automatiquement quand tu saisiras un intérimaire avec sa rémunération.
     </p>`;
-  } else {
-    body = topActions + `<p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
-      ${names.length} intérimaire${names.length>1?'s':''} en mémoire. Clique sur un nom pour l'ajouter au tableau.
-    </p>
-    <div style="max-height:48vh;overflow-y:auto;border:1px solid var(--border);border-radius:14px;background:var(--bg-2);padding:6px">`;
-    names.forEach(n => {
+    showModal('📚 Carnet d\'intérimaires', empty);
+    return;
+  }
+
+  // Construit la liste des entreprises distinctes pour le filtre
+  const ents = [...new Set(names.map(n => (CARNET[n].entreprise||'').trim()).filter(e => e))].sort((a,b)=>a.localeCompare(b,'fr'));
+  const entOptions = ['<option value="">— toutes les entreprises —</option>']
+    .concat(ents.map(e => `<option value="${_esc(e)}">${_esc(e)}</option>`))
+    .concat([`<option value="__none__">— sans entreprise —</option>`])
+    .join('');
+
+  const body = topActions + `
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <input id="carnet-search" type="search" placeholder="🔎 Rechercher (nom, prénom, entreprise…)"
+        oninput="renderCarnetList()"
+        style="flex:1;min-width:200px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:13px;color:var(--text);outline:none">
+      <select id="carnet-filter-ent" onchange="renderCarnetList()"
+        style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:13px;color:var(--text);outline:none;cursor:pointer">
+        ${entOptions}
+      </select>
+    </div>
+    <p id="carnet-count" style="font-size:12px;color:var(--text-muted);margin:0 0 10px 2px"></p>
+    <div id="carnet-list" style="max-height:52vh;overflow-y:auto;border:1px solid var(--border);border-radius:14px;background:var(--bg-2);padding:6px"></div>`;
+
+  showModal('📚 Carnet d\'intérimaires', body);
+  renderCarnetList();
+}
+
+function renderCarnetList(){
+  const list = document.getElementById('carnet-list');
+  const counter = document.getElementById('carnet-count');
+  if(!list) return;
+
+  const q = (document.getElementById('carnet-search')?.value || '').trim().toLowerCase();
+  const filterEnt = document.getElementById('carnet-filter-ent')?.value || '';
+  const norm = (s) => _normalizeName(s||'');
+  const qNorm = norm(q);
+
+  let names = Object.keys(CARNET).sort((a,b)=>a.localeCompare(b,'fr'));
+
+  // Filtre entreprise
+  if(filterEnt === '__none__'){
+    names = names.filter(n => !(CARNET[n].entreprise||'').trim());
+  } else if(filterEnt){
+    names = names.filter(n => (CARNET[n].entreprise||'').trim() === filterEnt);
+  }
+  // Recherche texte (nom + entreprise)
+  if(qNorm){
+    names = names.filter(n => {
+      const ent = CARNET[n].entreprise||'';
+      return norm(n).includes(qNorm) || norm(ent).includes(qNorm);
+    });
+  }
+
+  counter.textContent = `${names.length} intérimaire${names.length>1?'s':''} affiché${names.length>1?'s':''} sur ${Object.keys(CARNET).length}`;
+
+  if(!names.length){
+    list.innerHTML = `<p style="text-align:center;color:var(--text-muted);font-size:13px;padding:18px">Aucun résultat.</p>`;
+    return;
+  }
+
+  // Regroupement par entreprise
+  const groups = {};
+  names.forEach(n => {
+    const ent = (CARNET[n].entreprise||'').trim() || '— Sans entreprise —';
+    (groups[ent] = groups[ent]||[]).push(n);
+  });
+  const groupKeys = Object.keys(groups).sort((a,b) => {
+    if(a.startsWith('—')) return 1;
+    if(b.startsWith('—')) return -1;
+    return a.localeCompare(b,'fr');
+  });
+
+  let html = '';
+  groupKeys.forEach(g => {
+    html += `<div style="padding:8px 10px 4px 10px;font-size:11px;font-weight:700;color:var(--forma-blue);text-transform:uppercase;letter-spacing:.5px">
+      🏢 ${_esc(g)} <span style="color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0">· ${groups[g].length}</span>
+    </div>`;
+    groups[g].forEach(n => {
       const c = CARNET[n];
-      body += `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border-radius:10px;margin-bottom:5px;border:1px solid var(--border)">
-        <button onclick="addFromCarnet('${n.replace(/'/g,"\\'")}')" title="Ajouter cet intérimaire au tableau du mois en cours" style="flex:1;text-align:left;background:transparent;border:0;padding:6px 4px;font-family:inherit;cursor:pointer;color:var(--text);font-size:14px;font-weight:600">
-          ${n}
-          <span style="display:block;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);margin-top:2px">${c.salNetHebdo} €/sem net · ${c.factureHebdo} €/sem fact. · vu ${c.lastUsed||'–'}</span>
+      const nq = _jsq(n);
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--card);border-radius:10px;margin-bottom:5px;border:1px solid var(--border)">
+        <button onclick="addFromCarnet('${nq}')" title="Ajouter au tableau du mois en cours" style="flex:1;text-align:left;background:transparent;border:0;padding:4px 2px;font-family:inherit;cursor:pointer;color:var(--text);font-size:14px;font-weight:600">
+          ${_esc(n)}
+          <span style="display:block;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);margin-top:2px">${c.salNetHebdo} €/sem net · ${c.factureHebdo} €/sem fact.${c.lastUsed?` · vu ${c.lastUsed}`:''}</span>
         </button>
-        <button onclick="if(confirm('Retirer ${n.replace(/'/g,"\\'")} du carnet ?')){carnetRemove('${n.replace(/'/g,"\\'")}');openCarnet();}" class="btn-icon" title="Supprimer du carnet">✕</button>
+        <button onclick="openCarnetEdit('${nq}')" class="btn-icon" title="Modifier">✏️</button>
+        <button onclick="if(confirm('Retirer ${nq} du carnet ?')){carnetRemove('${nq}');renderCarnetList();}" class="btn-icon" title="Supprimer">✕</button>
       </div>`;
     });
-    body += `</div>`;
-  }
-  showModal('📚 Carnet d\'intérimaires', body);
+  });
+  list.innerHTML = html;
+}
+
+function openCarnetEdit(nom){
+  const c = CARNET[nom];
+  if(!c) return;
+  // Liste des entreprises existantes pour autocomplétion
+  const ents = [...new Set(Object.values(CARNET).map(x => (x.entreprise||'').trim()).filter(e => e))].sort((a,b)=>a.localeCompare(b,'fr'));
+  const dlOpts = ents.map(e => `<option value="${_esc(e)}">`).join('');
+
+  const html = `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+      Modifier les rémunérations et l'entreprise pour <strong>${_esc(nom)}</strong>.
+    </p>
+    <datalist id="ent-datalist">${dlOpts}</datalist>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <label style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Salaire net hebdo (€)</span>
+        <input id="edit-sal" type="number" step="0.01" value="${c.salNetHebdo}"
+          style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:14px;color:var(--text);outline:none">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Facture hebdo (€)</span>
+        <input id="edit-fac" type="number" step="0.01" value="${c.factureHebdo}"
+          style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:14px;color:var(--text);outline:none">
+      </label>
+    </div>
+    <label style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+      <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Entreprise</span>
+      <input id="edit-ent" list="ent-datalist" value="${_esc(c.entreprise||'')}" placeholder="MGB, JDS, ACTIBAT…"
+        style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:14px;color:var(--text);outline:none">
+    </label>
+    <p style="font-size:11px;color:var(--text-muted);margin:0 0 14px 2px">
+      Ces valeurs sont utilisées par défaut quand tu ajoutes l'intérimaire à un mois. Modifie-les ici si la moyenne pré-enregistrée n'est pas juste.
+    </p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="openCarnet()">← Annuler</button>
+      <button class="btn btn-primary" style="padding:10px 18px;font-size:13px;min-height:auto" onclick="saveCarnetEdit('${_jsq(nom)}')">💾 Enregistrer</button>
+    </div>`;
+  showModal('✏️ Modifier — ' + nom, html);
+}
+
+function saveCarnetEdit(nom){
+  const sal = parseFloat(document.getElementById('edit-sal').value)||0;
+  const fac = parseFloat(document.getElementById('edit-fac').value)||0;
+  const ent = (document.getElementById('edit-ent').value||'').trim();
+  if(!CARNET[nom]) return;
+  CARNET[nom].salNetHebdo = sal;
+  CARNET[nom].factureHebdo = fac;
+  CARNET[nom].entreprise = ent;
+  saveCarnet();
+  refreshCarnetDatalist();
+  // Si l'intérimaire est dans le tableau du mois en cours, propage les nouveaux taux
+  STATE.emps.forEach(e => {
+    if(e.nom === nom){
+      e.salNetHebdo = sal;
+      e.factureHebdo = fac;
+    }
+  });
+  saveStorage();
+  render();
+  openCarnet();
 }
 function openCarnetBulkAdd(){
   const html = `
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
       Colle <strong>une ligne par intérimaire</strong>, au format :
     </p>
-    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px">Nom Prénom;sal_net_hebdo;facture_hebdo</pre>
+    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px">Nom Prénom;sal_net_hebdo;facture_hebdo;entreprise</pre>
     <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Exemple :</p>
-    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.7">PEREIRA VARELA EDGAR;850;1547
-BORGES SANCHES ROBALO AUGUSTO;850;1547
-DIALLO ABDOUL;720;1320</pre>
-    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Séparateurs acceptés : <code>;</code> · <code>,</code> · <code>tabulation</code>. Tu peux laisser le sal/fac vides (ils seront auto-remplis plus tard).</p>
+    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.7">PEREIRA VARELA EDGAR;850;1547;ACTIBAT
+BORGES SANCHES ROBALO AUGUSTO;850;1547;ACTIBAT
+DIALLO ABDOUL;720;1320;MGB</pre>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Séparateurs acceptés : <code>;</code> · <code>tabulation</code>. Tu peux laisser le sal/fac/entreprise vides (auto-remplis ou modifiables plus tard).</p>
     <textarea id="carnet-bulk-input" placeholder="Colle ta liste ici…" style="width:100%;min-height:220px;padding:12px;border:1.5px solid var(--border);border-radius:11px;background:var(--bg-2);font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);outline:none;resize:vertical;line-height:1.5"></textarea>
     <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-ghost" style="padding:11px 16px;font-size:13px;min-height:auto" onclick="openCarnet()">← Retour</button>
@@ -1136,13 +1288,15 @@ function processBulkAddCarnet(){
 
   let added=0, updated=0, skipped=0;
   lines.forEach(line => {
-    const parts = line.split(/[;,\t]/).map(p => p.trim()).filter(p => p !== '');
+    // On ne filtre PAS les vides ici : on garde la position des colonnes (sal/fac peuvent être vides)
+    const parts = line.split(/[;\t]/).map(p => p.trim());
     const nom = (parts[0]||'').trim();
     if(!nom){ skipped++; return; }
-    const sal = parts[1] !== undefined ? (parseFloat(parts[1].replace(',','.'))||0) : 0;
-    const fac = parts[2] !== undefined ? (parseFloat(parts[2].replace(',','.'))||0) : 0;
+    const sal = parts[1] && parts[1] !== '' ? (parseFloat(parts[1].replace(',','.'))||0) : 0;
+    const fac = parts[2] && parts[2] !== '' ? (parseFloat(parts[2].replace(',','.'))||0) : 0;
+    const ent = (parts[3]||'').trim();
     if(CARNET[nom]) updated++; else added++;
-    carnetUpsert(nom, sal, fac);
+    carnetUpsert(nom, sal, fac, ent);
   });
 
   let msg = `✅ Carnet mis à jour\n\n${added} ajouté${added>1?'s':''}, ${updated} mis à jour`;
@@ -1151,12 +1305,15 @@ function processBulkAddCarnet(){
   openCarnet();
 }
 function exportCarnetCSV(){
-  const names = Object.keys(CARNET).sort((a,b)=>a.localeCompare(b,'fr'));
+  const names = Object.keys(CARNET).sort((a,b) => {
+    const ea = (CARNET[a].entreprise||'').localeCompare(CARNET[b].entreprise||'','fr');
+    return ea !== 0 ? ea : a.localeCompare(b,'fr');
+  });
   if(!names.length){ alert('Le carnet est vide, rien à exporter.'); return; }
-  let csv = 'nom;salNetHebdo;factureHebdo;lastUsed\n';
+  let csv = 'nom;salNetHebdo;factureHebdo;entreprise;lastUsed\n';
   names.forEach(n => {
     const c = CARNET[n];
-    csv += `${n};${c.salNetHebdo};${c.factureHebdo};${c.lastUsed||''}\n`;
+    csv += `${n};${c.salNetHebdo};${c.factureHebdo};${c.entreprise||''};${c.lastUsed||''}\n`;
   });
   const blob = new Blob(["﻿"+csv], { type:'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);

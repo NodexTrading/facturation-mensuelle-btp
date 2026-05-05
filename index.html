@@ -624,82 +624,38 @@ body {
     <datalist id="carnet-datalist"></datalist>
   </div>
 
-  <!-- SETUP -->
+  <!-- PÉRIODE GLOBALE -->
   <section class="card">
-    <header class="card-head"><span class="dot"></span> Chantier & période</header>
+    <header class="card-head"><span class="dot"></span> Période</header>
     <div class="card-body">
       <div class="setup-grid">
         <div class="field">
-          <span class="field-label">Nom du chantier</span>
-          <input class="input" id="chantier" value="ACTIBAT — Bois sacré actibat Leonardo" oninput="render()">
-        </div>
-        <div class="field">
-          <span class="field-label">Mois à facturer</span>
+          <span class="field-label">Mois à facturer (s'applique à tous les tableaux)</span>
           <select class="input" id="mois" onchange="render()">
             <!-- rempli par JS -->
           </select>
         </div>
+        <div class="field">
+          <span class="field-label">Nombre de chantiers</span>
+          <div style="padding:13px 16px;background:var(--bg-2);border:1.5px solid var(--border);border-radius:12px;font-weight:700;color:var(--text)" id="nb-tableaux">— tableau</div>
+        </div>
       </div>
+      <datalist id="entreprise-datalist"></datalist>
     </div>
   </section>
 
-  <!-- ÉQUIPE -->
-  <section class="card">
-    <header class="card-head">
-      <span class="dot"></span> Équipe
-      <div class="head-actions">
-        <span style="font-size:12px;color:var(--text-muted)" id="eq-count">0 intérimaire</span>
-        <button class="btn-mini add" onclick="addEmp()">+ Ajouter intérimaire</button>
-      </div>
-    </header>
-    <div class="t-wrap" id="t-wrap-eq">
-      <!-- table générée par JS -->
-    </div>
-    <div class="empty" id="empty-eq" style="display:none">
-      <div class="ic">👷</div>
-      <p>Ajoute un premier intérimaire pour démarrer la facturation.</p>
-    </div>
-  </section>
+  <!-- TABLEAUX MULTI-CHANTIERS (générés par JS) -->
+  <div id="tableaux-wrap"></div>
 
-  <!-- FÉRIÉS -->
-  <section class="card">
-    <header class="card-head accent">
-      <span class="dot"></span> Heures fériées (optionnel)
-      <div class="head-actions">
-        <button class="btn-mini add" onclick="addFerie()">+ Ajouter ligne férié</button>
-      </div>
-    </header>
-    <div class="t-wrap" id="t-wrap-ferie">
-      <!-- table générée par JS -->
-    </div>
-    <div class="empty" id="empty-ferie">
-      <div class="ic">🇫🇷</div>
-      <p style="font-size:12px">Pas de jour férié travaillé ce mois ? Laisse vide. Sinon ajoute une ligne par intérimaire concerné.</p>
-    </div>
-  </section>
+  <!-- BOUTON AJOUT TABLEAU -->
+  <div style="text-align:center;margin:12px 0 28px">
+    <button class="btn btn-primary" onclick="addTableau()" style="font-size:14px">➕ Nouveau tableau (chantier)</button>
+  </div>
 
-  <!-- TOTAUX -->
+  <!-- SYNTHÈSE GLOBALE -->
   <section class="card">
-    <header class="card-head ok"><span class="dot"></span> Totaux du mois</header>
-    <div class="card-body">
-      <div class="totals-grid">
-        <div class="total-tile salaire">
-          <div class="total-label">Salaires nets totaux (paie)</div>
-          <div class="total-value mono" id="tot-sal">0,00 €</div>
-          <div class="total-sub" id="tot-sal-sub">— jours travaillés</div>
-        </div>
-        <div class="total-tile salaire">
-          <div class="total-label">Heures fériées</div>
-          <div class="total-value mono" id="tot-ferie">0,00 €</div>
-          <div class="total-sub" id="tot-ferie-sub">salaire / facture</div>
-        </div>
-        <div class="total-tile facture">
-          <div class="total-label">Facture client (TOTAL)</div>
-          <div class="total-value mono" id="tot-fac">0,00 €</div>
-          <div class="total-sub" id="tot-fac-sub">à envoyer au client</div>
-        </div>
-      </div>
-    </div>
+    <header class="card-head ok"><span class="dot"></span> Synthèse globale du mois</header>
+    <div class="card-body" id="totaux-globaux"></div>
   </section>
 
 </main>
@@ -714,17 +670,51 @@ function toggleTheme(){
 }
 try{const s=localStorage.getItem('forma_theme');if(s)document.documentElement.dataset.theme=s}catch(e){}
 
-/* ════════ STATE ════════ */
+/* ════════ STATE — multi-tableaux ════════ */
 const STATE = {
-  chantier: '',
-  year: 2026, month: 3, // avril (0-indexed)
-  emps: [],
-  feries: [],
+  year: 2026, month: 2, // mars (0-indexed)
+  tableaux: [],         // [{ id, chantier, entreprise, emps, feries }]
   empIdCtr: 1,
   ferieIdCtr: 1,
+  primeIdCtr: 1,
+  tableauIdCtr: 1,
 };
-const STORAGE_KEY = 'forma_facturation_v2';
+const STORAGE_KEY = 'forma_facturation_v3';
+const STORAGE_KEY_LEGACY = 'forma_facturation_v2';
 const CARNET_KEY = 'forma_carnet_v1';
+
+/* Helpers tableau */
+function getTableau(id){ return STATE.tableaux.find(t => t.id === id); }
+function ensureFirstTableau(){
+  if(STATE.tableaux.length === 0){
+    STATE.tableaux.push({
+      id: STATE.tableauIdCtr++,
+      chantier: '',
+      entreprise: '',
+      emps: [],
+      feries: [],
+    });
+  }
+}
+function newTableau(opts){
+  const t = {
+    id: STATE.tableauIdCtr++,
+    chantier: opts?.chantier || '',
+    entreprise: opts?.entreprise || '',
+    emps: [],
+    feries: [],
+  };
+  STATE.tableaux.push(t);
+  return t;
+}
+function refreshEntrepriseDatalist(){
+  const dl = document.getElementById('entreprise-datalist');
+  if(!dl) return;
+  const ents = new Set();
+  Object.values(CARNET).forEach(c => { if(c.entreprise) ents.add(c.entreprise); });
+  STATE.tableaux.forEach(t => { if(t.entreprise) ents.add(t.entreprise); });
+  dl.innerHTML = [...ents].sort().map(e => `<option value="${(e||'').replace(/"/g,'&quot;')}">`).join('');
+}
 
 /* ════════ CARNET — bibliothèque persistante d'intérimaires ════════ */
 function loadCarnet(){
@@ -786,26 +776,62 @@ function refreshCarnetDatalist(){
 function saveStorage(){
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      chantier: STATE.chantier,
       year: STATE.year, month: STATE.month,
-      emps: STATE.emps, feries: STATE.feries,
-      empIdCtr: STATE.empIdCtr, ferieIdCtr: STATE.ferieIdCtr
+      tableaux: STATE.tableaux,
+      empIdCtr: STATE.empIdCtr, ferieIdCtr: STATE.ferieIdCtr,
+      primeIdCtr: STATE.primeIdCtr, tableauIdCtr: STATE.tableauIdCtr,
     }));
   }catch(e){}
 }
 function loadStorage(){
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return false;
-    const d = JSON.parse(raw);
-    if(typeof d.chantier==='string') STATE.chantier = d.chantier;
-    if(typeof d.year==='number') STATE.year = d.year;
-    if(typeof d.month==='number') STATE.month = d.month;
-    if(Array.isArray(d.emps)) STATE.emps = d.emps;
-    if(Array.isArray(d.feries)) STATE.feries = d.feries;
-    if(typeof d.empIdCtr==='number') STATE.empIdCtr = d.empIdCtr;
-    if(typeof d.ferieIdCtr==='number') STATE.ferieIdCtr = d.ferieIdCtr;
-    return true;
+    // Tente le format v3 (multi-tableaux)
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const d = JSON.parse(raw);
+      if(typeof d.year==='number') STATE.year = d.year;
+      if(typeof d.month==='number') STATE.month = d.month;
+      if(typeof d.empIdCtr==='number') STATE.empIdCtr = d.empIdCtr;
+      if(typeof d.ferieIdCtr==='number') STATE.ferieIdCtr = d.ferieIdCtr;
+      if(typeof d.primeIdCtr==='number') STATE.primeIdCtr = d.primeIdCtr;
+      if(typeof d.tableauIdCtr==='number') STATE.tableauIdCtr = d.tableauIdCtr;
+      if(Array.isArray(d.tableaux)){
+        STATE.tableaux = d.tableaux.map(t => ({
+          id: t.id || (STATE.tableauIdCtr++),
+          chantier: t.chantier || '',
+          entreprise: t.entreprise || '',
+          emps: (t.emps||[]).map(e => ({
+            ...e,
+            primes: e.primes || [],
+            jours: e.jours || {},
+          })),
+          feries: t.feries || [],
+        }));
+        return true;
+      }
+    }
+    // Migration v2 → v3 : convertit l'ancien tableau unique en STATE.tableaux[0]
+    raw = localStorage.getItem(STORAGE_KEY_LEGACY);
+    if(raw){
+      const d = JSON.parse(raw);
+      if(typeof d.year==='number') STATE.year = d.year;
+      if(typeof d.month==='number') STATE.month = d.month;
+      if(typeof d.empIdCtr==='number') STATE.empIdCtr = d.empIdCtr;
+      if(typeof d.ferieIdCtr==='number') STATE.ferieIdCtr = d.ferieIdCtr;
+      if(Array.isArray(d.emps) && d.emps.length){
+        STATE.tableaux = [{
+          id: STATE.tableauIdCtr++,
+          chantier: d.chantier || '',
+          entreprise: '',
+          emps: d.emps.map(e => ({...e, primes: e.primes || [], jours: e.jours || {}})),
+          feries: d.feries || [],
+        }];
+        // Sauvegarde immédiate dans le nouveau format
+        saveStorage();
+        return true;
+      }
+    }
+    return false;
   }catch(e){ return false; }
 }
 function clearStorage(){ try{ localStorage.removeItem(STORAGE_KEY); }catch(e){} }
@@ -852,12 +878,38 @@ function fillMois(){
   });
 }
 
-/* ════════ ÉQUIPE TABLE ════════ */
-function setEmpField(id, field, value){
-  const e = STATE.emps.find(x=>x.id===id); if(!e) return;
+/* ════════ TABLEAUX & ÉQUIPES ════════ */
+function addTableau(){
+  newTableau();
+  saveStorage();
+  render();
+}
+function delTableau(tableauId){
+  const t = getTableau(tableauId); if(!t) return;
+  if(STATE.tableaux.length === 1){
+    if(!confirm('C\'est le seul tableau. Le vider remettra à zéro chantier + intérimaires + fériés. Continuer ?')) return;
+    t.chantier = ''; t.entreprise = ''; t.emps = []; t.feries = [];
+  } else {
+    const lbl = (t.chantier||'sans nom') + (t.entreprise?' · '+t.entreprise:'');
+    if(!confirm(`Supprimer le tableau « ${lbl} » avec ${t.emps.length} intérimaire${t.emps.length>1?'s':''} ?`)) return;
+    STATE.tableaux = STATE.tableaux.filter(x => x.id !== tableauId);
+  }
+  saveStorage();
+  render();
+}
+function setTableauField(tableauId, field, value){
+  const t = getTableau(tableauId); if(!t) return;
+  t[field] = (value||'').toString();
+  saveStorage();
+  computeGlobalTotals();
+  refreshEntrepriseDatalist();
+}
+
+function setEmpField(tableauId, empId, field, value){
+  const t = getTableau(tableauId); if(!t) return;
+  const e = t.emps.find(x=>x.id===empId); if(!e) return;
   if(field==='nom'){
     e.nom = value;
-    // Si le nom existe dans le carnet et que sal/fac sont vides → auto-fill
     const trimmed = (value||'').trim();
     if(trimmed && CARNET[trimmed]){
       if(!e.salNetHebdo) e.salNetHebdo = CARNET[trimmed].salNetHebdo || 0;
@@ -866,37 +918,84 @@ function setEmpField(id, field, value){
   } else {
     e[field] = parseFloat(value)||0;
   }
-  // Mettre à jour le carnet
-  carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo);
-  computeAndRenderTotals();
+  carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo, t.entreprise);
   saveStorage();
+  render();
 }
-function setEmpJours(id, week, value){
-  const e = STATE.emps.find(x=>x.id===id); if(!e) return;
+function setEmpJours(tableauId, empId, week, value){
+  const t = getTableau(tableauId); if(!t) return;
+  const e = t.emps.find(x=>x.id===empId); if(!e) return;
   const v = Math.max(0, Math.min(7, parseInt(value)||0));
   e.jours[week] = v;
-  computeAndRenderTotals();
   saveStorage();
+  render();
 }
-function delEmp(id){
+function delEmp(tableauId, empId){
   if(!confirm('Supprimer cet intérimaire ?')) return;
-  STATE.emps = STATE.emps.filter(x=>x.id!==id);
-  STATE.feries = STATE.feries.filter(x=>x.empId!==id);
-  render(); saveStorage();
+  const t = getTableau(tableauId); if(!t) return;
+  t.emps = t.emps.filter(x=>x.id!==empId);
+  t.feries = t.feries.filter(x=>x.empId!==empId);
+  saveStorage();
+  render();
 }
-function addEmp(){
-  STATE.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, factureHebdo:0, jours:{} });
-  render(); saveStorage();
+function addEmp(tableauId){
+  const t = getTableau(tableauId); if(!t) return;
+  t.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, factureHebdo:0, jours:{}, primes:[] });
+  saveStorage();
+  render();
 }
-function renderEmpTable(weeks){
-  const wrap = document.getElementById('t-wrap-eq');
-  const empty = document.getElementById('empty-eq');
-  const count = document.getElementById('eq-count');
-  count.textContent = STATE.emps.length + ' intérimaire' + (STATE.emps.length>1?'s':'');
-  if(STATE.emps.length===0){ wrap.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display='none';
 
-  let head = `<table class="t"><thead><tr>
+/* Primes ponctuelles */
+function addPrime(tableauId, empId){
+  const t = getTableau(tableauId); if(!t) return;
+  const e = t.emps.find(x=>x.id===empId); if(!e) return;
+  const label = prompt('Libellé de la prime ?\n\nEx : « Prime chef chantier », « Prime panier », « Heures sup' + ' »');
+  if(!label || !label.trim()) return;
+  const montantStr = prompt(`Montant de la prime « ${label.trim()} » en euros ?\n\n(saisir un nombre, ex : 100)`);
+  const montant = parseFloat((montantStr||'').replace(',','.'))||0;
+  if(!montant) return;
+  const refacture = confirm('Cette prime est-elle refacturée au client ?\n\nOK = OUI (ajoutée à la facture)\nAnnuler = NON (uniquement côté salaire)');
+  e.primes = e.primes || [];
+  e.primes.push({ id: STATE.primeIdCtr++, label: label.trim(), montant, refacture });
+  saveStorage();
+  render();
+}
+function delPrime(tableauId, empId, primeId){
+  const t = getTableau(tableauId); if(!t) return;
+  const e = t.emps.find(x=>x.id===empId); if(!e) return;
+  e.primes = (e.primes||[]).filter(p=>p.id!==primeId);
+  saveStorage();
+  render();
+}
+/* ════════ FÉRIÉS — tableau-aware ════════ */
+function addFerie(tableauId){
+  const t = getTableau(tableauId); if(!t) return;
+  if(t.emps.length===0){ alert('Ajoute d\'abord un intérimaire à ce tableau.'); return; }
+  t.feries.push({ id: STATE.ferieIdCtr++, empId: t.emps[0].id, heures: 0, tauxSal: 0, tauxFac: 0 });
+  saveStorage();
+  render();
+}
+function setFerieField(tableauId, ferieId, field, value){
+  const t = getTableau(tableauId); if(!t) return;
+  const x = t.feries.find(f=>f.id===ferieId); if(!x) return;
+  if(field==='empId') x.empId = parseInt(value);
+  else x[field] = parseFloat(value)||0;
+  saveStorage();
+  render();
+}
+function delFerie(tableauId, ferieId){
+  const t = getTableau(tableauId); if(!t) return;
+  t.feries = t.feries.filter(x=>x.id!==ferieId);
+  saveStorage();
+  render();
+}
+
+/* ════════ RENDU MULTI-TABLEAUX ════════ */
+function renderEmpTableHTML(t, weeks){
+  if(t.emps.length === 0){
+    return `<div class="empty"><div class="ic">👷</div><p>Aucun intérimaire dans ce tableau. Clique « + Intérimaire ».</p></div>`;
+  }
+  let head = `<div class="t-wrap"><table class="t"><thead><tr>
     <th>Nom / Prénom</th>
     <th class="right">Sal. net hebdo</th>
     <th class="right">Fact. hebdo</th>
@@ -910,74 +1009,59 @@ function renderEmpTable(weeks){
   </tr></thead><tbody>`;
 
   let body='';
-  STATE.emps.forEach(e => {
-    const tjNet = e.salNetHebdo / 5;
-    const tjFac = e.factureHebdo / 5;
+  let tSal=0, tFac=0, tJr=0;
+  t.emps.forEach(e => {
+    const tjNet = e.salNetHebdo / 5, tjFac = e.factureHebdo / 5;
     let totJr = 0;
     weeks.forEach(w => totJr += (e.jours[w]||0));
-    const sal = totJr * tjNet;
-    const fac = totJr * tjFac;
+    const salJ = totJr * tjNet, facJ = totJr * tjFac;
+    const primes = e.primes || [];
+    const primSal = primes.reduce((s,p)=>s+(parseFloat(p.montant)||0), 0);
+    const primFac = primes.reduce((s,p)=>s+(p.refacture?(parseFloat(p.montant)||0):0), 0);
+    tJr += totJr; tSal += salJ + primSal; tFac += facJ + primFac;
 
     body += `<tr>
-      <td><input class="t-input name" list="carnet-datalist" value="${e.nom.replace(/"/g,'&quot;')}" placeholder="Nom Prénom" oninput="setEmpField(${e.id},'nom',this.value)"></td>
-      <td class="right"><input class="t-input eur" value="${e.salNetHebdo}" oninput="setEmpField(${e.id},'salNetHebdo',this.value)"></td>
-      <td class="right"><input class="t-input eur" value="${e.factureHebdo}" oninput="setEmpField(${e.id},'factureHebdo',this.value)"></td>
+      <td><input class="t-input name" list="carnet-datalist" value="${_esc(e.nom)}" placeholder="Nom Prénom" oninput="setEmpField(${t.id},${e.id},'nom',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${e.salNetHebdo}" oninput="setEmpField(${t.id},${e.id},'salNetHebdo',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${e.factureHebdo}" oninput="setEmpField(${t.id},${e.id},'factureHebdo',this.value)"></td>
       <td class="right">${f(tjNet)}</td>
       <td class="right">${f(tjFac)}</td>`;
     weeks.forEach(w => {
-      body += `<td class="center"><input class="t-input day" value="${e.jours[w]||0}" oninput="setEmpJours(${e.id},${w},this.value)"></td>`;
+      body += `<td class="center"><input class="t-input day" value="${e.jours[w]||0}" oninput="setEmpJours(${t.id},${e.id},${w},this.value)"></td>`;
     });
     body += `<td class="center" style="font-weight:700">${totJr}</td>
-      <td class="right salaire">${f(sal)}</td>
-      <td class="right facture">${f(fac)}</td>
-      <td><button class="btn-icon" onclick="delEmp(${e.id})" title="Supprimer">✕</button></td>
+      <td class="right salaire">${f(salJ + primSal)}</td>
+      <td class="right facture">${f(facJ + primFac)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-icon" onclick="addPrime(${t.id},${e.id})" title="Ajouter une prime ponctuelle" style="color:var(--accent-dark);border-color:color-mix(in srgb,var(--accent) 30%,transparent);background:var(--accent-soft);margin-right:3px">＋€</button>
+        <button class="btn-icon" onclick="delEmp(${t.id},${e.id})" title="Supprimer">✕</button>
+      </td>
     </tr>`;
-  });
-
-  // ligne TOTAL
-  let tSal=0, tFac=0, tJr=0;
-  STATE.emps.forEach(e => {
-    let j = 0; weeks.forEach(w => j += (e.jours[w]||0));
-    tJr += j;
-    tSal += j * (e.salNetHebdo/5);
-    tFac += j * (e.factureHebdo/5);
+    // Lignes primes
+    primes.forEach(p => {
+      body += `<tr style="background:rgba(243,150,39,.08)">
+        <td colspan="${5+weeks.length}" style="padding-left:50px;font-style:italic;color:var(--accent-dark);font-family:'Instrument Sans',sans-serif">↳ Prime : ${_esc(p.label)} ${p.refacture?'<span style="font-size:10px;background:var(--accent);color:white;padding:1px 6px;border-radius:4px;margin-left:6px">refacturée</span>':'<span style="font-size:10px;color:var(--text-muted);margin-left:6px">(non refacturée)</span>'}</td>
+        <td class="center" style="font-style:italic;color:var(--accent-dark)">—</td>
+        <td class="right" style="color:var(--accent-dark)">+${f(p.montant)}</td>
+        <td class="right" style="color:var(--accent-dark)">${p.refacture?'+'+f(p.montant):'—'}</td>
+        <td><button class="btn-icon" onclick="delPrime(${t.id},${e.id},${p.id})" title="Supprimer prime">✕</button></td>
+      </tr>`;
+    });
   });
   body += `<tr class="t-row-tot">
-    <td colspan="${5+weeks.length}">TOTAL — ${STATE.emps.length} intérimaire${STATE.emps.length>1?'s':''}</td>
+    <td colspan="${5+weeks.length}">TOTAL — ${t.emps.length} intérimaire${t.emps.length>1?'s':''}</td>
     <td class="center">${tJr}</td>
     <td class="right">${f(tSal)}</td>
     <td class="right">${f(tFac)}</td>
     <td></td>
-  </tr>`;
-
-  body += `</tbody></table>`;
-  wrap.innerHTML = head + body;
+  </tr></tbody></table></div>`;
+  return head + body;
 }
 
-/* ════════ FÉRIÉS ════════ */
-function addFerie(){
-  if(STATE.emps.length===0){ alert('Ajoute d\'abord un intérimaire à l\'équipe.'); return; }
-  STATE.feries.push({ id: STATE.ferieIdCtr++, empId: STATE.emps[0].id, heures: 0, tauxSal: 0, tauxFac: 0 });
-  render(); saveStorage();
-}
-function setFerieField(id, field, value){
-  const x = STATE.feries.find(f=>f.id===id); if(!x) return;
-  if(field==='empId') x.empId = parseInt(value);
-  else x[field] = parseFloat(value)||0;
-  computeAndRenderTotals();
-  saveStorage();
-}
-function delFerie(id){
-  STATE.feries = STATE.feries.filter(x=>x.id!==id);
-  render(); saveStorage();
-}
-function renderFerieTable(){
-  const wrap = document.getElementById('t-wrap-ferie');
-  const empty = document.getElementById('empty-ferie');
-  if(STATE.feries.length===0){ wrap.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display='none';
-
-  let head = `<table class="t"><thead><tr>
+function renderFerieTableHTML(t){
+  if(t.feries.length === 0) return '';
+  let html = `<div style="padding:10px 24px 4px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);border-top:1px solid var(--line);letter-spacing:.5px">🇫🇷 Heures fériées</div>
+  <div class="t-wrap"><table class="t"><thead><tr>
     <th>Intérimaire</th>
     <th class="center">Heures</th>
     <th class="right">Taux salaire €/h</th>
@@ -986,110 +1070,237 @@ function renderFerieTable(){
     <th class="facture">FACTURE</th>
     <th></th>
   </tr></thead><tbody>`;
-
-  STATE.feries.forEach(x => {
-    const sal = x.heures * x.tauxSal;
-    const fac = x.heures * x.tauxFac;
-    let opts = STATE.emps.map(e =>
-      `<option value="${e.id}" ${e.id===x.empId?'selected':''}>${e.nom||'(sans nom)'}</option>`
-    ).join('');
-    head += `<tr>
-      <td><select class="t-input name" onchange="setFerieField(${x.id},'empId',this.value)">${opts}</select></td>
-      <td class="center"><input class="t-input day" value="${x.heures}" oninput="setFerieField(${x.id},'heures',this.value)"></td>
-      <td class="right"><input class="t-input eur" value="${x.tauxSal}" oninput="setFerieField(${x.id},'tauxSal',this.value)"></td>
-      <td class="right"><input class="t-input eur" value="${x.tauxFac}" oninput="setFerieField(${x.id},'tauxFac',this.value)"></td>
+  let tSal=0, tFac=0;
+  t.feries.forEach(x => {
+    const sal = x.heures * x.tauxSal, fac = x.heures * x.tauxFac;
+    tSal += sal; tFac += fac;
+    let opts = t.emps.map(e => `<option value="${e.id}" ${e.id===x.empId?'selected':''}>${_esc(e.nom)||'(sans nom)'}</option>`).join('');
+    html += `<tr>
+      <td><select class="t-input name" onchange="setFerieField(${t.id},${x.id},'empId',this.value)">${opts}</select></td>
+      <td class="center"><input class="t-input day" value="${x.heures}" oninput="setFerieField(${t.id},${x.id},'heures',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${x.tauxSal}" oninput="setFerieField(${t.id},${x.id},'tauxSal',this.value)"></td>
+      <td class="right"><input class="t-input eur" value="${x.tauxFac}" oninput="setFerieField(${t.id},${x.id},'tauxFac',this.value)"></td>
       <td class="right salaire">${f(sal)}</td>
       <td class="right facture">${f(fac)}</td>
-      <td><button class="btn-icon" onclick="delFerie(${x.id})" title="Supprimer">✕</button></td>
+      <td><button class="btn-icon" onclick="delFerie(${t.id},${x.id})" title="Supprimer">✕</button></td>
     </tr>`;
   });
-
-  let tSal=0, tFac=0;
-  STATE.feries.forEach(x => { tSal += x.heures*x.tauxSal; tFac += x.heures*x.tauxFac; });
-  head += `<tr class="t-row-tot">
+  html += `<tr class="t-row-tot">
     <td colspan="4">TOTAL férié</td>
     <td class="right">${f(tSal)}</td>
     <td class="right">${f(tFac)}</td>
     <td></td>
-  </tr></tbody></table>`;
-  wrap.innerHTML = head;
+  </tr></tbody></table></div>`;
+  return html;
 }
 
-/* ════════ TOTAUX GLOBAUX ════════ */
-function computeAndRenderTotals(){
-  const weeks = getWeeksOfMonth(STATE.year, STATE.month);
+function renderTableau(t, weeks){
+  // Calcul des sous-totaux
   let tSal=0, tFac=0, tJr=0;
-  STATE.emps.forEach(e => {
+  t.emps.forEach(e => {
     let j = 0; weeks.forEach(w => j += (e.jours[w]||0));
     tJr += j;
     tSal += j * (e.salNetHebdo/5);
     tFac += j * (e.factureHebdo/5);
+    (e.primes||[]).forEach(p => {
+      tSal += parseFloat(p.montant)||0;
+      if(p.refacture) tFac += parseFloat(p.montant)||0;
+    });
   });
-  let fSal=0, fFac=0;
-  STATE.feries.forEach(x => { fSal += x.heures*x.tauxSal; fFac += x.heures*x.tauxFac; });
+  t.feries.forEach(x => { tSal += x.heures*x.tauxSal; tFac += x.heures*x.tauxFac; });
+  const marge = tFac - tSal;
 
-  document.getElementById('tot-sal').textContent = f(tSal);
-  document.getElementById('tot-sal-sub').textContent = `${tJr} jour${tJr>1?'s':''} travaillé${tJr>1?'s':''}`;
-  document.getElementById('tot-ferie').textContent = f(fSal);
-  document.getElementById('tot-ferie-sub').textContent = STATE.feries.length===0 ? 'aucun' : `salaire — facture ${f(fFac)}`;
-  document.getElementById('tot-fac').textContent = f(tFac + fFac);
-  document.getElementById('tot-fac-sub').textContent = `dont ${f(fFac)} de fériés`;
+  const card = document.createElement('section');
+  card.className = 'card';
+  card.innerHTML = `
+    <header class="card-head" style="flex-wrap:wrap;gap:10px">
+      <span class="dot">📊</span>
+      <input class="input" style="flex:1;min-width:240px;max-width:420px;font-size:14px;font-weight:600;padding:9px 12px"
+        value="${_esc(t.chantier)}"
+        placeholder="Nom du chantier"
+        oninput="setTableauField(${t.id},'chantier',this.value)">
+      <input class="input" style="max-width:180px;font-size:13px;padding:9px 12px"
+        list="entreprise-datalist"
+        value="${_esc(t.entreprise)}"
+        placeholder="🏢 Entreprise"
+        oninput="setTableauField(${t.id},'entreprise',this.value)">
+      <div class="head-actions">
+        <span style="font-size:12px;color:var(--text-muted);font-weight:500">${t.emps.length} intérim. · ${tJr} j</span>
+        <button class="btn-mini add" onclick="addEmp(${t.id})">+ Intérimaire</button>
+        <button class="btn-mini" onclick="addFerie(${t.id})">+ Férié</button>
+        <button class="btn-mini danger" onclick="delTableau(${t.id})" title="Supprimer ce tableau">🗑️</button>
+      </div>
+    </header>
+    ${renderEmpTableHTML(t, weeks)}
+    ${renderFerieTableHTML(t)}
+    <div class="card-body" style="background:linear-gradient(135deg,rgba(61,165,224,.06) 0%,rgba(243,150,39,.04) 100%);border-top:1px solid var(--line);padding:18px 24px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;font-family:'JetBrains Mono',monospace">
+        <div><div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Jours</div><div style="font-size:22px;font-weight:800;color:var(--text);margin-top:4px">${tJr}</div></div>
+        <div><div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Salaire net</div><div style="font-size:22px;font-weight:800;color:var(--text);margin-top:4px">${f(tSal)}</div></div>
+        <div><div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Facture HT</div><div style="font-size:22px;font-weight:800;color:var(--accent-dark);margin-top:4px">${f(tFac)}</div></div>
+        <div><div style="font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Marge</div><div style="font-size:22px;font-weight:800;color:var(--ok);margin-top:4px">${f(marge)}</div></div>
+      </div>
+    </div>
+  `;
+  return card;
+}
 
-  // refresh table totals
-  renderEmpTable(weeks);
-  renderFerieTable();
+/* ════════ TOTAUX GLOBAUX ════════ */
+function computeGlobalTotals(){
+  const wrap = document.getElementById('totaux-globaux');
+  const nbDiv = document.getElementById('nb-tableaux');
+  if(nbDiv) nbDiv.textContent = STATE.tableaux.length + ' tableau' + (STATE.tableaux.length>1?'x':'');
+  if(!wrap) return;
+  const weeks = getWeeksOfMonth(STATE.year, STATE.month);
+
+  let globalJr=0, globalSal=0, globalFac=0;
+  const empSet = new Set();
+  const byEnt = {}; // par entreprise
+  STATE.tableaux.forEach(t => {
+    let tJr=0, tSal=0, tFac=0;
+    t.emps.forEach(e => {
+      const nomKey = (e.nom||'').trim().toLowerCase();
+      if(nomKey) empSet.add(nomKey);
+      let j = 0; weeks.forEach(w => j += (e.jours[w]||0));
+      tJr += j;
+      tSal += j * (e.salNetHebdo/5);
+      tFac += j * (e.factureHebdo/5);
+      (e.primes||[]).forEach(p => {
+        const m = parseFloat(p.montant)||0;
+        tSal += m;
+        if(p.refacture) tFac += m;
+      });
+    });
+    t.feries.forEach(x => { tSal += x.heures*x.tauxSal; tFac += x.heures*x.tauxFac; });
+    globalJr += tJr; globalSal += tSal; globalFac += tFac;
+    const ent = (t.entreprise||'').trim() || '— Sans entreprise —';
+    if(!byEnt[ent]) byEnt[ent] = { jr:0, sal:0, fac:0, count:0, chantiers:[] };
+    byEnt[ent].jr += tJr; byEnt[ent].sal += tSal; byEnt[ent].fac += tFac;
+    byEnt[ent].count++;
+    if(t.chantier) byEnt[ent].chantiers.push(t.chantier);
+  });
+
+  let html = `<div class="totals-grid">
+    <div class="total-tile salaire">
+      <div class="total-label">Salaires nets totaux</div>
+      <div class="total-value mono">${f(globalSal)}</div>
+      <div class="total-sub">${empSet.size} intérim. unique${empSet.size>1?'s':''} · ${globalJr} jour${globalJr>1?'s':''}</div>
+    </div>
+    <div class="total-tile salaire">
+      <div class="total-label">Marge brute</div>
+      <div class="total-value mono">${f(globalFac - globalSal)}</div>
+      <div class="total-sub">${STATE.tableaux.length} tableau${STATE.tableaux.length>1?'x':''} · ${monthName(STATE.month)} ${STATE.year}</div>
+    </div>
+    <div class="total-tile facture">
+      <div class="total-label">Facture client TOTALE</div>
+      <div class="total-value mono">${f(globalFac)}</div>
+      <div class="total-sub">à envoyer aux clients</div>
+    </div>
+  </div>`;
+
+  const entKeys = Object.keys(byEnt).sort((a,b) => {
+    if(a.startsWith('—')) return 1;
+    if(b.startsWith('—')) return -1;
+    return a.localeCompare(b,'fr');
+  });
+  if(entKeys.length > 0){
+    html += `<div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line)">
+      <div class="section-title" style="margin-bottom:12px">📊 Totaux par entreprise</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px">`;
+    entKeys.forEach(ent => {
+      const d = byEnt[ent];
+      const chSum = d.chantiers.length ? d.chantiers.slice(0,2).join(' · ') + (d.chantiers.length>2?` + ${d.chantiers.length-2}`:'') : '—';
+      html += `<div style="padding:14px 16px;background:rgba(255,255,255,.7);border:1px solid var(--line);border-radius:14px">
+        <div style="font-family:'Instrument Sans',sans-serif;font-size:12px;font-weight:700;color:var(--forma-blue);text-transform:uppercase;letter-spacing:.5px">🏢 ${_esc(ent)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${d.count} chantier${d.count>1?'s':''} · ${d.jr} j · ${_esc(chSum)}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:10px;font-family:'JetBrains Mono',monospace">
+          <div><div style="font-size:9px;color:var(--text-muted);text-transform:uppercase">Salaire</div><div style="font-size:14px;font-weight:800">${f(d.sal)}</div></div>
+          <div><div style="font-size:9px;color:var(--text-muted);text-transform:uppercase">Facture</div><div style="font-size:14px;font-weight:800;color:var(--accent-dark)">${f(d.fac)}</div></div>
+          <div><div style="font-size:9px;color:var(--text-muted);text-transform:uppercase">Marge</div><div style="font-size:14px;font-weight:800;color:var(--ok)">${f(d.fac-d.sal)}</div></div>
+        </div>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+  wrap.innerHTML = html;
 }
 
 /* ════════ MASTER RENDER ════════ */
 function render(){
-  const ch = document.getElementById('chantier');
-  STATE.chantier = ch.value;
+  ensureFirstTableau();
+  const wrap = document.getElementById('tableaux-wrap');
+  if(!wrap) return;
   const weeks = getWeeksOfMonth(STATE.year, STATE.month);
-  renderEmpTable(weeks);
-  renderFerieTable();
-  computeAndRenderTotals();
+  wrap.innerHTML = '';
+  STATE.tableaux.forEach(t => wrap.appendChild(renderTableau(t, weeks)));
+  computeGlobalTotals();
+  refreshEntrepriseDatalist();
   saveStorage();
 }
 
-/* ════════ EXPORT CSV ════════ */
+/* ════════ EXPORT CSV — multi-tableaux ════════ */
 function exportCSV(){
   const weeks = getWeeksOfMonth(STATE.year, STATE.month);
   const sep = ';';
-  let csv = `${STATE.chantier} — Facturation ${monthName(STATE.month)} ${STATE.year}\n\n`;
-  csv += ['Nom','Sal net hebdo','Fact hebdo','€/J net','€/J fact', ...weeks.map(w=>'S'+w),'Total/JR','SALAIRE','FACTURE'].join(sep) + '\n';
-  STATE.emps.forEach(e => {
-    let j=0; weeks.forEach(w => j += (e.jours[w]||0));
-    const tjN = e.salNetHebdo/5, tjF = e.factureHebdo/5;
-    const row = [
-      e.nom, e.salNetHebdo, e.factureHebdo,
-      tjN.toFixed(2), tjF.toFixed(2),
-      ...weeks.map(w => e.jours[w]||0),
-      j, (j*tjN).toFixed(2), (j*tjF).toFixed(2)
-    ];
-    csv += row.join(sep) + '\n';
-  });
-  if(STATE.feries.length){
-    csv += '\nFÉRIÉS\n';
-    csv += ['Intérimaire','Heures','Taux sal €/h','Taux fac €/h','SALAIRE','FACTURE'].join(sep) + '\n';
-    STATE.feries.forEach(x => {
-      const e = STATE.emps.find(y=>y.id===x.empId);
-      csv += [e?.nom||'?',x.heures,x.tauxSal,x.tauxFac,(x.heures*x.tauxSal).toFixed(2),(x.heures*x.tauxFac).toFixed(2)].join(sep) + '\n';
+  let csv = `Facturation ${monthName(STATE.month)} ${STATE.year}\n\n`;
+
+  let globalJr=0, globalSal=0, globalFac=0;
+  STATE.tableaux.forEach((t, idx) => {
+    csv += `\n=== TABLEAU ${idx+1} : ${t.chantier||'(sans nom)'} ${t.entreprise?'· '+t.entreprise:''} ===\n`;
+    csv += ['Nom','Sal net hebdo','Fact hebdo','€/J net','€/J fact', ...weeks.map(w=>'S'+w),'Total/JR','SALAIRE','FACTURE'].join(sep) + '\n';
+    let tJr=0, tSal=0, tFac=0;
+    t.emps.forEach(e => {
+      let j=0; weeks.forEach(w => j += (e.jours[w]||0));
+      const tjN = e.salNetHebdo/5, tjF = e.factureHebdo/5;
+      const primes = e.primes || [];
+      const primSal = primes.reduce((s,p)=>s+(parseFloat(p.montant)||0),0);
+      const primFac = primes.reduce((s,p)=>s+(p.refacture?(parseFloat(p.montant)||0):0),0);
+      const sal = j*tjN + primSal, fac = j*tjF + primFac;
+      tJr += j; tSal += sal; tFac += fac;
+      csv += [
+        e.nom, e.salNetHebdo, e.factureHebdo,
+        tjN.toFixed(2), tjF.toFixed(2),
+        ...weeks.map(w => e.jours[w]||0),
+        j, sal.toFixed(2), fac.toFixed(2)
+      ].join(sep) + '\n';
+      // Lignes primes
+      primes.forEach(p => {
+        csv += [`  ↳ Prime : ${p.label}${p.refacture?' (refacturée)':''}`,'','','','',
+          ...weeks.map(()=>''),'',(parseFloat(p.montant)||0).toFixed(2),
+          (p.refacture?(parseFloat(p.montant)||0):0).toFixed(2)].join(sep) + '\n';
+      });
     });
-  }
+    if(t.feries.length){
+      csv += '\nFériés\n';
+      csv += ['Intérimaire','Heures','Taux sal €/h','Taux fac €/h','SALAIRE','FACTURE'].join(sep) + '\n';
+      t.feries.forEach(x => {
+        const e = t.emps.find(y=>y.id===x.empId);
+        const fSal = x.heures*x.tauxSal, fFac = x.heures*x.tauxFac;
+        tSal += fSal; tFac += fFac;
+        csv += [e?.nom||'?',x.heures,x.tauxSal,x.tauxFac,fSal.toFixed(2),fFac.toFixed(2)].join(sep) + '\n';
+      });
+    }
+    csv += `\nTOTAL ${t.chantier||'tableau '+(idx+1)} ${sep}${sep}${sep}${sep}${sep}${weeks.map(()=>'').join(sep)}${sep}${tJr}${sep}${tSal.toFixed(2)}${sep}${tFac.toFixed(2)}\n`;
+    globalJr += tJr; globalSal += tSal; globalFac += tFac;
+  });
+
+  csv += `\n\n=== TOTAL GÉNÉRAL ===\nJours total${sep}${globalJr}\nSalaire net total${sep}${globalSal.toFixed(2)} €\nFacture HT totale${sep}${globalFac.toFixed(2)} €\nMarge brute${sep}${(globalFac-globalSal).toFixed(2)} €\n`;
+
   const blob = new Blob(["﻿"+csv], { type:'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${STATE.chantier.replace(/[^\w-]+/g,'_')}_${monthName(STATE.month)}_${STATE.year}.csv`;
+  a.download = `Facturation_${monthName(STATE.month)}_${STATE.year}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-/* ════════ RESET ════════ */
+/* ════════ RESET — multi-tableaux ════════ */
 function resetAll(){
-  if(!confirm('Tout effacer (équipe + fériés) ?')) return;
-  STATE.emps = [];
-  STATE.feries = [];
+  if(!confirm('Tout effacer (tous les tableaux + fériés) ?')) return;
+  STATE.tableaux = [];
+  ensureFirstTableau();
+  saveStorage();
   render();
 }
 
@@ -1262,12 +1473,14 @@ function saveCarnetEdit(nom){
   CARNET[nom].entreprise = ent;
   saveCarnet();
   refreshCarnetDatalist();
-  // Si l'intérimaire est dans le tableau du mois en cours, propage les nouveaux taux
-  STATE.emps.forEach(e => {
-    if(e.nom === nom){
-      e.salNetHebdo = sal;
-      e.factureHebdo = fac;
-    }
+  // Si l'intérimaire est présent dans un ou plusieurs tableaux du mois en cours, propage
+  STATE.tableaux.forEach(t => {
+    t.emps.forEach(e => {
+      if(e.nom === nom){
+        e.salNetHebdo = sal;
+        e.factureHebdo = fac;
+      }
+    });
   });
   saveStorage();
   render();
@@ -1323,56 +1536,56 @@ function loadTestJDSMars2026(){
     year: 2026,
     month: 2, // mars (0-indexé)
     emps: [
-      { nom:'SANCHES FURTADO MIGUEL',          salNetHebdo:1000, factureHebdo:1820, jours:{10:5, 11:5, 12:5, 13:5, 14:2} },
-      { nom:'SEMEDO MOREIRA JOSE CLAUDIO',     salNetHebdo:900,  factureHebdo:1638, jours:{10:4, 11:5, 12:5, 13:4, 14:2} },
+      // Jours par semaine alignés sur la facture mars 2026 JDS / LE BAIA (totaux : 95 jours, 15 750 € net, 28 665 € facture)
+      { nom:'SANCHES FURTADO MIGUEL',          salNetHebdo:1000, factureHebdo:1820, jours:{10:5, 11:5, 12:5, 13:5, 14:1} },
+      { nom:'SEMEDO MOREIRA JOSE CLAUDIO',     salNetHebdo:900,  factureHebdo:1638, jours:{10:4, 11:5, 12:5, 13:5, 14:2} },
       { nom:'COELHO DOS SANTOS NEILSON',       salNetHebdo:650,  factureHebdo:1183, jours:{10:5, 11:5, 12:5, 13:5, 14:2} },
       { nom:'GONCALVES SILVA JOSE DOMINGOS',   salNetHebdo:900,  factureHebdo:1638, jours:{10:0, 11:0, 12:0, 13:5, 14:2} },
-      { nom:'LOPES DIAS MANUEL ANTONIO',       salNetHebdo:750,  factureHebdo:1365, jours:{10:1, 11:5, 12:5, 13:5, 14:0} },
-      { nom:'LOPES TAVARES JOSE CARLOS',       salNetHebdo:700,  factureHebdo:1274, jours:{10:4, 11:0, 12:0, 13:0, 14:0} },
+      { nom:'LOPES DIAS MANUEL ANTONIO',       salNetHebdo:750,  factureHebdo:1365, jours:{10:3, 11:5, 12:5, 13:5, 14:0} },
+      { nom:'LOPES TAVARES JOSE CARLOS',       salNetHebdo:700,  factureHebdo:1274, jours:{10:1, 11:0, 12:0, 13:0, 14:0} },
       { nom:'TAVARES DE BARROS JOSE EVANILDO', salNetHebdo:650,  factureHebdo:1183, jours:{10:1, 11:0, 12:0, 13:0, 14:1} },
       { nom:'CORREIA DE PINA GELSON PEDRINO',  salNetHebdo:950,  factureHebdo:1729, jours:{10:1, 11:0, 12:0, 13:0, 14:0} },
-      { nom:'MORENO DE PINA EDMILSON',         salNetHebdo:900,  factureHebdo:1638, jours:{10:0, 11:0, 12:0, 13:0, 14:1} },
+      { nom:'MORENO DE PINA EDMILSON',         salNetHebdo:900,  factureHebdo:1638, jours:{10:0, 11:0, 12:0, 13:1, 14:1} },
     ]
   };
 
-  const hasData = STATE.emps.length > 0 || (STATE.chantier && STATE.chantier !== 'ACTIBAT — Bois sacré actibat Leonardo');
-  if(hasData && !confirm('Cela va REMPLACER le tableau du mois en cours (chantier, mois, intérimaires).\n\nContinuer ?')) return;
+  if(STATE.tableaux.some(x => x.chantier === test.chantier)){
+    if(!confirm('Un tableau JDS — LE BAIA existe déjà. Créer quand même un second tableau ?')) return;
+  }
 
-  // 1) Chantier + période
-  STATE.chantier = test.chantier;
+  // 1) Période globale
   STATE.year = test.year;
   STATE.month = test.month;
-  STATE.emps = [];
-  STATE.feries = [];
 
-  // 2) Intérimaires + jours par semaine (en utilisant le carnet pour récupérer les tarifs si déjà saisi)
-  test.emps.forEach(t => {
-    const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === _normalizeName(t.nom));
+  // 2) Création d'un nouveau tableau dédié au test
+  const newT = newTableau({ chantier: test.chantier, entreprise: 'JDS' });
+
+  // 3) Intérimaires + jours par semaine (utilise le carnet si déjà saisi)
+  test.emps.forEach(tEmp => {
+    const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === _normalizeName(tEmp.nom));
     const carnetData = carnetMatch ? CARNET[carnetMatch] : null;
-    STATE.emps.push({
+    newT.emps.push({
       id: STATE.empIdCtr++,
-      nom: carnetMatch || t.nom,
-      salNetHebdo: carnetData?.salNetHebdo || t.salNetHebdo,
-      factureHebdo: carnetData?.factureHebdo || t.factureHebdo,
-      jours: { ...t.jours }
+      nom: carnetMatch || tEmp.nom,
+      salNetHebdo: carnetData?.salNetHebdo || tEmp.salNetHebdo,
+      factureHebdo: carnetData?.factureHebdo || tEmp.factureHebdo,
+      jours: { ...tEmp.jours },
+      primes: [],
     });
-    // Hydrate aussi le carnet pour les fois suivantes (sans entreprise pour ne pas écraser)
-    carnetUpsert(t.nom, t.salNetHebdo, t.factureHebdo, 'JDS');
+    carnetUpsert(tEmp.nom, tEmp.salNetHebdo, tEmp.factureHebdo, 'JDS');
   });
 
-  // 3) Synchronise les inputs visibles
-  const _ch = document.getElementById('chantier');
-  if(_ch) _ch.value = STATE.chantier;
+  // 4) Synchronise le sélecteur mois
   const _ms = document.getElementById('mois');
   if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
 
-  // 4) Sauve + render → calcul automatique
+  // 5) Sauve + render → calcul automatique
   saveStorage();
   render();
 
-  // 5) Récap chiffré
+  // 6) Récap chiffré
   let totalSal = 0, totalFac = 0, totalJr = 0;
-  STATE.emps.forEach(e => {
+  newT.emps.forEach(e => {
     let jr = 0;
     Object.values(e.jours).forEach(v => jr += (parseInt(v)||0));
     totalJr += jr;
@@ -1416,64 +1629,92 @@ function exportCarnetCSV(){
   URL.revokeObjectURL(url);
 }
 
-function addFromCarnet(nom){
-  // Vérifier que pas déjà dans l'équipe du mois
-  const existing = STATE.emps.find(e => e.nom === nom);
-  if(existing){
-    alert(nom + ' est déjà dans le tableau du mois en cours.');
-    return;
+/* Helper : choisit le tableau cible pour ajout depuis carnet
+   Stratégie : dernier tableau si 1 seul, sinon ouvre un sélecteur. */
+function pickTargetTableau(promptMsg){
+  ensureFirstTableau();
+  if(STATE.tableaux.length === 1) return STATE.tableaux[0];
+  // Plusieurs tableaux → demander à l'utilisateur lequel cibler
+  const choices = STATE.tableaux.map((t,i) =>
+    `${i+1}. ${t.chantier||'(sans nom)'}${t.entreprise?' · '+t.entreprise:''} (${t.emps.length} pers.)`
+  ).join('\n');
+  const ans = prompt((promptMsg||'Choisis le tableau cible') + ' :\n\n' + choices + '\n\nN° (ou « N » pour créer un nouveau tableau)');
+  if(ans === null) return null;
+  if(ans.toLowerCase().trim() === 'n'){
+    return newTableau();
   }
+  const idx = parseInt(ans, 10) - 1;
+  if(idx >= 0 && idx < STATE.tableaux.length) return STATE.tableaux[idx];
+  return null;
+}
+
+function addFromCarnet(nom){
   const c = CARNET[nom];
   if(!c) return;
-  STATE.emps.push({
+  const t = pickTargetTableau(`Ajouter ${nom} dans quel tableau ?`);
+  if(!t) return;
+  if(t.emps.find(e => e.nom === nom)){
+    alert(nom + ' est déjà dans ce tableau.');
+    return;
+  }
+  t.emps.push({
     id: STATE.empIdCtr++,
     nom: nom,
     salNetHebdo: c.salNetHebdo || 0,
     factureHebdo: c.factureHebdo || 0,
-    jours: {}
+    jours: {},
+    primes: [],
   });
+  // Auto-set entreprise du tableau si vide et que la personne a une entreprise
+  if(!t.entreprise && c.entreprise) t.entreprise = c.entreprise;
   saveStorage();
   render();
   closeModal();
 }
 
 function addAllFromCarnetEntreprise(entreprise){
-  // entreprise = '' signifie "sans entreprise"
   const target = (entreprise||'').trim();
   const matchingNames = Object.keys(CARNET)
     .filter(n => ((CARNET[n].entreprise||'').trim()) === target)
     .sort((a,b)=>a.localeCompare(b,'fr'));
-
-  if(!matchingNames.length){
-    alert('Aucun intérimaire dans cette entreprise.');
-    return;
-  }
+  if(!matchingNames.length){ alert('Aucun intérimaire dans cette entreprise.'); return; }
 
   const label = target || 'Sans entreprise';
-  if(!confirm(`Ajouter les ${matchingNames.length} intérimaire${matchingNames.length>1?'s':''} de « ${label} » au tableau du mois en cours ?`)){
-    return;
+  // Stratégie : si l'entreprise existe déjà comme tableau (entreprise = ce nom), on l'utilise.
+  // Sinon on crée un nouveau tableau dédié.
+  let t = STATE.tableaux.find(x => (x.entreprise||'').trim() === target && target);
+  let createdNew = false;
+  if(!t){
+    if(!confirm(`Créer un nouveau tableau pour « ${label} » et y ajouter les ${matchingNames.length} intérimaire${matchingNames.length>1?'s':''} ?\n\n(Annule pour ajouter au tableau actuellement sélectionné à la place)`)){
+      t = pickTargetTableau(`Ajouter les ${matchingNames.length} intérimaires de « ${label} » dans quel tableau ?`);
+      if(!t) return;
+    } else {
+      t = newTableau({ chantier: label, entreprise: target });
+      createdNew = true;
+    }
   }
 
   let added = 0, skipped = 0;
   matchingNames.forEach(n => {
-    if(STATE.emps.find(e => e.nom === n)){ skipped++; return; }
+    if(t.emps.find(e => e.nom === n)){ skipped++; return; }
     const c = CARNET[n];
-    STATE.emps.push({
+    t.emps.push({
       id: STATE.empIdCtr++,
       nom: n,
       salNetHebdo: c.salNetHebdo || 0,
       factureHebdo: c.factureHebdo || 0,
-      jours: {}
+      jours: {},
+      primes: [],
     });
     added++;
   });
   saveStorage();
   render();
 
-  let msg = `✅ ${added} intérimaire${added>1?'s':''} ajouté${added>1?'s':''} de « ${label} »`;
+  let msg = `✅ ${added} intérimaire${added>1?'s':''} ajouté${added>1?'s':''} dans le tableau « ${t.chantier||label} »`;
+  if(createdNew) msg += '\n📊 Nouveau tableau créé';
   if(skipped) msg += `\n   (${skipped} déjà présent${skipped>1?'s':''}, ignoré${skipped>1?'s':''})`;
   alert(msg);
-  // On reste dans le carnet pour permettre d'ajouter une autre entreprise dans la foulée
   renderCarnetList();
 }
 function showModal(title, bodyHTML){
@@ -1578,6 +1819,20 @@ function importPresenceCSV(text){
     }
   }
 
+  // Chaque import CSV crée un NOUVEAU tableau dédié (1 relevé = 1 chantier = 1 tableau)
+  // L'utilisateur définit le nom du chantier juste avant
+  ensureFirstTableau();
+  const askChantier = prompt('Nom du chantier de ce relevé ?\n(Ex : « JDS - LE BAIA », « MGB - LE PATIO »…)\n\nLaisse vide pour ajouter au dernier tableau.', '');
+  let targetTableau;
+  if(askChantier === null){ return; }
+  if(askChantier.trim() === ''){
+    targetTableau = STATE.tableaux[STATE.tableaux.length - 1];
+  } else {
+    const askEntreprise = prompt(`Nom de l'entreprise pour « ${askChantier.trim()} » ? (laisse vide si tu ne sais pas)`, '');
+    if(askEntreprise === null) return;
+    targetTableau = newTableau({ chantier: askChantier.trim(), entreprise: (askEntreprise||'').trim() });
+  }
+
   let matched=0, created=0, missingPresences=[];
   for(let i=1; i<lines.length; i++){
     const cols = split(lines[i]);
@@ -1585,7 +1840,7 @@ function importPresenceCSV(text){
     if(!nomRaw) continue;
 
     const normNom = _normalizeName(nomRaw);
-    let emp = STATE.emps.find(e => _normalizeName(e.nom) === normNom);
+    let emp = targetTableau.emps.find(e => _normalizeName(e.nom) === normNom);
     if(!emp){
       // Avant de créer un emp vide, vérifier si on a ses infos dans le carnet
       const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === normNom);
@@ -1595,9 +1850,14 @@ function importPresenceCSV(text){
         nom: carnetMatch || nomRaw,
         salNetHebdo: carnetData ? carnetData.salNetHebdo : 0,
         factureHebdo: carnetData ? carnetData.factureHebdo : 0,
-        jours: {}
+        jours: {},
+        primes: [],
       };
-      STATE.emps.push(emp);
+      targetTableau.emps.push(emp);
+      // Si le tableau n'a pas d'entreprise mais le carnet en a une, on auto-remplit
+      if(!targetTableau.entreprise && carnetData?.entreprise){
+        targetTableau.entreprise = carnetData.entreprise;
+      }
       created++;
       if(!carnetMatch) missingPresences.push(nomRaw);
     } else {
@@ -1646,39 +1906,36 @@ function importPresenceCSV(text){
   alert(msg);
 }
 
-/* ════════ IMPORT FROM URL HASH (mode APPEND) ════════ */
+/* ════════ IMPORT FROM URL HASH — crée un nouveau tableau ════════ */
 function importFromHash(){
   try{
     const h = window.location.hash;
     if(!h) return 0;
-    // Match #data=... (base64 ou base64url) avec timestamp éventuel
     const m = h.match(/[#&]data=([A-Za-z0-9+/=_-]+)/);
     if(!m) return 0;
-    // Convertit base64url → base64 standard si besoin
     let b64 = m[1].replace(/-/g,'+').replace(/_/g,'/');
     while(b64.length % 4) b64 += '=';
     const json = decodeURIComponent(escape(atob(b64)));
     const data = JSON.parse(json);
-    // Métadonnées : remplacer le mois/chantier seulement si non encore renseignés
-    if(data.chantier && !STATE.chantier) STATE.chantier = data.chantier;
+    // Période : si data fournit year/month, on l'applique globalement
     if(typeof data.year==='number')  STATE.year  = data.year;
     if(typeof data.month==='number') STATE.month = data.month;
-    // emps : on AJOUTE à l'existant (jamais remplacer)
+    // Crée un NOUVEAU tableau pour cet import (1 calcul de marge = 1 tableau)
     let added = 0;
-    if(Array.isArray(data.emps)){
+    if(Array.isArray(data.emps) && data.emps.length){
+      const t = newTableau({ chantier: data.chantier || '', entreprise: data.entreprise || '' });
       data.emps.forEach(e => {
         const nom = e.nom||'';
         const salNetHebdo = parseFloat(e.salNetHebdo)||0;
         const factureHebdo = parseFloat(e.factureHebdo)||0;
-        STATE.emps.push({
+        t.emps.push({
           id: STATE.empIdCtr++,
-          nom, salNetHebdo, factureHebdo, jours: {}
+          nom, salNetHebdo, factureHebdo, jours: {}, primes: [],
         });
-        carnetUpsert(nom, salNetHebdo, factureHebdo);
+        carnetUpsert(nom, salNetHebdo, factureHebdo, t.entreprise);
         added++;
       });
     }
-    // Nettoyer le hash pour éviter ré-import au refresh
     try{ history.replaceState(null,'',window.location.pathname); }catch(e){}
     return added;
   }catch(err){
@@ -1702,23 +1959,21 @@ function showImportBanner(count){
 
 /* ════════ INIT ════════ */
 loadStorage();
-// Hydrate le carnet depuis les emps déjà chargés (au cas où c'est la 1ʳᵉ ouverture après mise à jour)
-STATE.emps.forEach(e => {
-  if(e.nom && (e.salNetHebdo || e.factureHebdo)) carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo);
+ensureFirstTableau();
+// Hydrate le carnet depuis tous les tableaux (au cas où c'est la 1ʳᵉ ouverture après mise à jour)
+STATE.tableaux.forEach(t => {
+  t.emps.forEach(e => {
+    if(e.nom && (e.salNetHebdo || e.factureHebdo)) carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo, t.entreprise);
+  });
 });
 refreshCarnetDatalist();
 fillMois();
-// Synchroniser inputs avec STATE
-const _ch = document.getElementById('chantier');
-if(_ch) _ch.value = STATE.chantier || '';
 const _ms = document.getElementById('mois');
 if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
 
 const importedCount = importFromHash();
 if(importedCount > 0){
-  // Synchroniser le sélecteur de mois si modifié par import
   if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
-  if(_ch) _ch.value = STATE.chantier || '';
   saveStorage();
   showImportBanner(importedCount);
 }
@@ -1728,7 +1983,6 @@ window.addEventListener('hashchange', () => {
   const c = importFromHash();
   if(c > 0){
     if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
-    if(_ch) _ch.value = STATE.chantier || '';
     saveStorage();
     showImportBanner(c);
     render();

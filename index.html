@@ -722,7 +722,20 @@ function loadCarnet(){
     const raw = localStorage.getItem(CARNET_KEY);
     if(!raw) return {};
     const obj = JSON.parse(raw);
-    return obj && typeof obj==='object' ? obj : {};
+    if(!obj || typeof obj !== 'object') return {};
+    // Migration legacy : un mec → un seul tarif → on convertit en {rates:{ENT:{sal,fac}}}
+    Object.keys(obj).forEach(nom => {
+      const c = obj[nom];
+      if(c && !c.rates){
+        const ent = (c.entreprise||'?').toString().trim().toUpperCase() || '?';
+        c.rates = {};
+        c.rates[ent] = {
+          salNetHebdo: c.salNetHebdo || 0,
+          factureHebdo: c.factureHebdo || 0,
+        };
+      }
+    });
+    return obj;
   }catch(e){ return {}; }
 }
 function saveCarnet(){
@@ -730,32 +743,76 @@ function saveCarnet(){
 }
 let CARNET = loadCarnet();
 
+/* Helpers : récupère le tarif d'un mec pour une entreprise donnée (avec fallback) */
+function _entKey(entreprise){ return (entreprise||'').toString().trim().toUpperCase() || '?'; }
+function carnetGetRate(nom, entreprise){
+  const c = CARNET[nom];
+  if(!c) return null;
+  const key = _entKey(entreprise);
+  if(c.rates && c.rates[key]) return c.rates[key];
+  // Match partiel : "JDS CONSTRUCTION" → trouve "JDS"
+  if(c.rates){
+    for(const k of Object.keys(c.rates)){
+      if(key && k && (key.indexOf(k)>=0 || k.indexOf(key)>=0)) return c.rates[k];
+    }
+    // Fallback : premier tarif disponible
+    const first = Object.keys(c.rates)[0];
+    if(first) return c.rates[first];
+  }
+  return { salNetHebdo: c.salNetHebdo||0, factureHebdo: c.factureHebdo||0 };
+}
+/* Récap synthétique d'un mec : retourne {salNetHebdo, factureHebdo, entreprise} de l'entrée principale (pour datalist) */
+function carnetPrimary(nom){
+  const c = CARNET[nom];
+  if(!c) return null;
+  if(c.rates){
+    const ents = Object.keys(c.rates);
+    if(!ents.length) return null;
+    const first = ents[0];
+    return { salNetHebdo: c.rates[first].salNetHebdo, factureHebdo: c.rates[first].factureHebdo, entreprise: first, allEnts: ents };
+  }
+  return { salNetHebdo: c.salNetHebdo||0, factureHebdo: c.factureHebdo||0, entreprise: c.entreprise||'', allEnts: [c.entreprise].filter(Boolean) };
+}
+
 function carnetUpsert(nom, salNetHebdo, factureHebdo, entreprise){
   const cleanNom = (nom||'').trim();
   if(!cleanNom) return;
   const sal = parseFloat(salNetHebdo)||0;
   const fac = parseFloat(factureHebdo)||0;
-  const ent = (entreprise||'').toString().trim();
+  const entK = _entKey(entreprise);
   // Ne stocke que si au moins une valeur non nulle, ou si l'entrée existe déjà
-  if(sal === 0 && fac === 0 && !ent && !CARNET[cleanNom]) return;
-  CARNET[cleanNom] = {
-    salNetHebdo: sal || (CARNET[cleanNom]?.salNetHebdo || 0),
-    factureHebdo: fac || (CARNET[cleanNom]?.factureHebdo || 0),
-    entreprise: ent || (CARNET[cleanNom]?.entreprise || ''),
-    lastUsed: new Date().toISOString().slice(0,7) // YYYY-MM
+  if(sal === 0 && fac === 0 && entK === '?' && !CARNET[cleanNom]) return;
+  if(!CARNET[cleanNom]) CARNET[cleanNom] = { rates: {}, lastUsed: new Date().toISOString().slice(0,7) };
+  if(!CARNET[cleanNom].rates) CARNET[cleanNom].rates = {};
+  const existing = CARNET[cleanNom].rates[entK] || { salNetHebdo: 0, factureHebdo: 0 };
+  CARNET[cleanNom].rates[entK] = {
+    salNetHebdo: sal || existing.salNetHebdo,
+    factureHebdo: fac || existing.factureHebdo,
   };
+  CARNET[cleanNom].lastUsed = new Date().toISOString().slice(0,7);
   saveCarnet();
   refreshCarnetDatalist();
 }
 function carnetSetEntreprise(nom, entreprise){
-  if(!CARNET[nom]) return;
-  CARNET[nom].entreprise = (entreprise||'').toString().trim();
+  // Renomme la clé d'entreprise — usage : reclassifier un tarif existant
+  if(!CARNET[nom] || !CARNET[nom].rates) return;
+  const ents = Object.keys(CARNET[nom].rates);
+  if(ents.length !== 1) return;
+  const oldKey = ents[0];
+  const newKey = _entKey(entreprise);
+  if(oldKey === newKey) return;
+  CARNET[nom].rates[newKey] = CARNET[nom].rates[oldKey];
+  delete CARNET[nom].rates[oldKey];
   saveCarnet();
 }
-function carnetSetRates(nom, salNetHebdo, factureHebdo){
+function carnetSetRates(nom, salNetHebdo, factureHebdo, entreprise){
   if(!CARNET[nom]) return;
-  CARNET[nom].salNetHebdo = parseFloat(salNetHebdo)||0;
-  CARNET[nom].factureHebdo = parseFloat(factureHebdo)||0;
+  if(!CARNET[nom].rates) CARNET[nom].rates = {};
+  const entK = _entKey(entreprise || carnetPrimary(nom)?.entreprise);
+  CARNET[nom].rates[entK] = {
+    salNetHebdo: parseFloat(salNetHebdo)||0,
+    factureHebdo: parseFloat(factureHebdo)||0,
+  };
   saveCarnet();
   refreshCarnetDatalist();
 }
@@ -769,8 +826,10 @@ function refreshCarnetDatalist(){
   if(!dl) return;
   const names = Object.keys(CARNET).sort((a,b) => a.localeCompare(b,'fr'));
   dl.innerHTML = names.map(n => {
-    const c = CARNET[n];
-    return `<option value="${n.replace(/"/g,'&quot;')}">${c.salNetHebdo}€/sem · ${c.factureHebdo}€ fact.</option>`;
+    const p = carnetPrimary(n);
+    if(!p) return '';
+    const entLabel = (p.allEnts && p.allEnts.length>1) ? `(${p.allEnts.join('/')})` : (p.entreprise||'');
+    return `<option value="${n.replace(/"/g,'&quot;')}">${p.salNetHebdo}€/sem ${entLabel}</option>`;
   }).join('');
 }
 function saveStorage(){
@@ -944,7 +1003,8 @@ function setEmpField(tableauId, empId, field, value){
     e.nom = value;
     const trimmed = (value||'').trim();
     if(trimmed && CARNET[trimmed]){
-      if(!e.salNetHebdo) e.salNetHebdo = CARNET[trimmed].salNetHebdo || 0;
+      const rate = carnetGetRate(trimmed, t.entreprise);
+      if(rate && !e.salNetHebdo) e.salNetHebdo = rate.salNetHebdo || 0;
     }
   } else if(field==='factureHebdo'){
     // Plus saisie directe : factureHebdo est dérivé de salNetHebdo × coef(entreprise)
@@ -1365,8 +1425,14 @@ function openCarnet(){
     return;
   }
 
-  // Construit la liste des entreprises distinctes pour le filtre
-  const ents = [...new Set(names.map(n => (CARNET[n].entreprise||'').trim()).filter(e => e))].sort((a,b)=>a.localeCompare(b,'fr'));
+  // Construit la liste des entreprises distinctes pour le filtre (toutes celles ayant un tarif)
+  const entSet = new Set();
+  names.forEach(n => {
+    const c = CARNET[n];
+    if(c?.rates) Object.keys(c.rates).forEach(k => { if(k && k !== '?') entSet.add(k); });
+    else if(c?.entreprise) entSet.add(c.entreprise.trim());
+  });
+  const ents = [...entSet].sort((a,b)=>a.localeCompare(b,'fr'));
   const entOptions = ['<option value="">— toutes les entreprises —</option>']
     .concat(ents.map(e => `<option value="${_esc(e)}">${_esc(e)}</option>`))
     .concat([`<option value="__none__">— sans entreprise —</option>`])
@@ -1401,17 +1467,23 @@ function renderCarnetList(){
 
   let names = Object.keys(CARNET).sort((a,b)=>a.localeCompare(b,'fr'));
 
+  // Helper : liste des entreprises pour un mec (depuis rates ou champ legacy)
+  const _ents = (n) => {
+    const c = CARNET[n]; if(!c) return [];
+    if(c.rates) return Object.keys(c.rates).filter(k => k && k !== '?');
+    return c.entreprise ? [c.entreprise.trim()] : [];
+  };
   // Filtre entreprise
   if(filterEnt === '__none__'){
-    names = names.filter(n => !(CARNET[n].entreprise||'').trim());
+    names = names.filter(n => _ents(n).length === 0);
   } else if(filterEnt){
-    names = names.filter(n => (CARNET[n].entreprise||'').trim() === filterEnt);
+    names = names.filter(n => _ents(n).includes(filterEnt));
   }
   // Recherche texte (nom + entreprise)
   if(qNorm){
     names = names.filter(n => {
-      const ent = CARNET[n].entreprise||'';
-      return norm(n).includes(qNorm) || norm(ent).includes(qNorm);
+      const entsStr = _ents(n).join(' ');
+      return norm(n).includes(qNorm) || norm(entsStr).includes(qNorm);
     });
   }
 
@@ -1422,11 +1494,17 @@ function renderCarnetList(){
     return;
   }
 
-  // Regroupement par entreprise
+  // Regroupement par entreprise — un mec peut apparaître dans plusieurs groupes (1 par entreprise dans rates)
   const groups = {};
   names.forEach(n => {
-    const ent = (CARNET[n].entreprise||'').trim() || '— Sans entreprise —';
-    (groups[ent] = groups[ent]||[]).push(n);
+    const entList = _ents(n);
+    if(entList.length === 0){
+      (groups['— Sans entreprise —'] = groups['— Sans entreprise —']||[]).push(n);
+    } else {
+      entList.forEach(ent => {
+        (groups[ent] = groups[ent]||[]).push(n);
+      });
+    }
   });
   const groupKeys = Object.keys(groups).sort((a,b) => {
     if(a.startsWith('—')) return 1;
@@ -1451,10 +1529,16 @@ function renderCarnetList(){
     groups[g].forEach(n => {
       const c = CARNET[n];
       const nq = _jsq(n);
+      // Affiche le tarif spécifique à CE groupe (entreprise) si dispo
+      const rate = isNoneGroup ? carnetPrimary(n) : (c?.rates?.[g] || carnetGetRate(n, g));
+      const sal = rate?.salNetHebdo || 0;
+      const fac = rate?.factureHebdo || 0;
+      const allEnts = c?.rates ? Object.keys(c.rates).filter(k=>k!=='?') : [];
+      const multiHint = allEnts.length > 1 ? ` · <span style="color:var(--accent-dark);font-weight:600">×${allEnts.length} tarifs</span>` : '';
       html += `<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--card);border-radius:10px;margin-bottom:5px;border:1px solid var(--border)">
         <button onclick="addFromCarnet('${nq}')" title="Ajouter au tableau du mois en cours" style="flex:1;text-align:left;background:transparent;border:0;padding:4px 2px;font-family:inherit;cursor:pointer;color:var(--text);font-size:14px;font-weight:600">
           ${_esc(n)}
-          <span style="display:block;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);margin-top:2px">${c.salNetHebdo} €/sem net · ${c.factureHebdo} €/sem fact.${c.lastUsed?` · vu ${c.lastUsed}`:''}</span>
+          <span style="display:block;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--text-muted);margin-top:2px">${sal} €/sem net · ${fac.toFixed(0)} €/sem fact.${multiHint}${c?.lastUsed?` · vu ${c.lastUsed}`:''}</span>
         </button>
         <button onclick="openCarnetEdit('${nq}')" class="btn-icon" title="Modifier">✏️</button>
         <button onclick="if(confirm('Retirer ${nq} du carnet ?')){carnetRemove('${nq}');renderCarnetList();}" class="btn-icon" title="Supprimer">✕</button>
@@ -1468,33 +1552,45 @@ function openCarnetEdit(nom){
   const c = CARNET[nom];
   if(!c) return;
   // Liste des entreprises existantes pour autocomplétion
-  const ents = [...new Set(Object.values(CARNET).map(x => (x.entreprise||'').trim()).filter(e => e))].sort((a,b)=>a.localeCompare(b,'fr'));
+  const entSet = new Set();
+  Object.values(CARNET).forEach(x => {
+    if(x.rates) Object.keys(x.rates).forEach(k => { if(k && k !== '?') entSet.add(k); });
+    else if(x.entreprise) entSet.add(x.entreprise.trim());
+  });
+  const ents = [...entSet].sort((a,b)=>a.localeCompare(b,'fr'));
   const dlOpts = ents.map(e => `<option value="${_esc(e)}">`).join('');
+
+  // Construit une ligne par tarif (par entreprise) pour ce mec
+  const rateEntries = c.rates ? Object.entries(c.rates) : [['?', { salNetHebdo: c.salNetHebdo||0, factureHebdo: c.factureHebdo||0 }]];
+  const rowsHtml = rateEntries.map(([ent, r], idx) => `
+    <div class="rate-row" data-idx="${idx}" data-orig-ent="${_esc(ent)}" style="display:grid;grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:end">
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:11px;font-weight:600;color:var(--text-muted)">Entreprise</span>
+        <input class="rate-ent" list="ent-datalist" value="${_esc(ent==='?'?'':ent)}" placeholder="MGB / JDS / ACTIBAT"
+          style="padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;background:var(--bg-2);font-family:inherit;font-size:13px;color:var(--text);outline:none">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:11px;font-weight:600;color:var(--text-muted)">Sal. net hebdo</span>
+        <input class="rate-sal" type="number" step="0.01" value="${r.salNetHebdo||0}"
+          style="padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;background:var(--bg-2);font-family:inherit;font-size:13px;color:var(--text);outline:none">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:11px;font-weight:600;color:var(--text-muted)">TTF auto</span>
+        <span class="rate-ttf" style="padding:9px 11px;border:1.5px dashed var(--border);border-radius:9px;background:transparent;font-size:13px;color:var(--accent-dark);font-weight:600">${(r.factureHebdo||0).toFixed(0)} €</span>
+      </label>
+      <button onclick="this.closest('.rate-row').remove()" class="btn-icon" title="Supprimer ce tarif" style="margin-bottom:1px">✕</button>
+    </div>`).join('');
 
   const html = `
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
-      Modifier les rémunérations et l'entreprise pour <strong>${_esc(nom)}</strong>.
+      Modifier les rémunérations de <strong>${_esc(nom)}</strong>. Un mec peut avoir <strong>plusieurs tarifs</strong> selon l'entreprise.
     </p>
     <datalist id="ent-datalist">${dlOpts}</datalist>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-      <label style="display:flex;flex-direction:column;gap:6px">
-        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Salaire net hebdo (€)</span>
-        <input id="edit-sal" type="number" step="0.01" value="${c.salNetHebdo}"
-          style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:14px;color:var(--text);outline:none">
-      </label>
-      <label style="display:flex;flex-direction:column;gap:6px">
-        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Facture hebdo (€)</span>
-        <input id="edit-fac" type="number" step="0.01" value="${c.factureHebdo}"
-          style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:14px;color:var(--text);outline:none">
-      </label>
-    </div>
-    <label style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
-      <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Entreprise</span>
-      <input id="edit-ent" list="ent-datalist" value="${_esc(c.entreprise||'')}" placeholder="MGB, JDS, ACTIBAT…"
-        style="padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--bg-2);font-family:inherit;font-size:14px;color:var(--text);outline:none">
-    </label>
+    <div id="rate-rows">${rowsHtml}</div>
+    <button onclick="(function(){const wrap=document.getElementById('rate-rows');const tpl=wrap.querySelector('.rate-row');if(!tpl){return;}const clone=tpl.cloneNode(true);clone.querySelectorAll('input').forEach(i=>i.value='');clone.querySelector('.rate-ttf').textContent='0 €';clone.dataset.origEnt='';wrap.appendChild(clone);})()"
+      style="margin-bottom:12px;padding:8px 14px;font-size:12px;background:var(--primary-soft);color:var(--primary-dark);border:1px solid var(--primary);border-radius:9px;cursor:pointer;font-weight:600">＋ Ajouter un tarif (autre entreprise)</button>
     <p style="font-size:11px;color:var(--text-muted);margin:0 0 14px 2px">
-      Ces valeurs sont utilisées par défaut quand tu ajoutes l'intérimaire à un mois. Modifie-les ici si la moyenne pré-enregistrée n'est pas juste.
+      Le TTF est dérivé automatiquement du salaire net × coef de l'entreprise (ACTIBAT/JDS ×1,82, MGB ×1,78).
     </p>
     <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="openCarnet()">← Annuler</button>
@@ -1504,21 +1600,27 @@ function openCarnetEdit(nom){
 }
 
 function saveCarnetEdit(nom){
-  const sal = parseFloat(document.getElementById('edit-sal').value)||0;
-  const fac = parseFloat(document.getElementById('edit-fac').value)||0;
-  const ent = (document.getElementById('edit-ent').value||'').trim();
   if(!CARNET[nom]) return;
-  CARNET[nom].salNetHebdo = sal;
-  CARNET[nom].factureHebdo = fac;
-  CARNET[nom].entreprise = ent;
+  const rows = document.querySelectorAll('#rate-rows .rate-row');
+  const newRates = {};
+  rows.forEach(row => {
+    const ent = _entKey(row.querySelector('.rate-ent').value);
+    const sal = parseFloat(row.querySelector('.rate-sal').value)||0;
+    if(ent === '?' && sal === 0) return; // ligne vide ignorée
+    newRates[ent] = { salNetHebdo: sal, factureHebdo: ttfHebdo(sal, ent) };
+  });
+  CARNET[nom].rates = newRates;
   saveCarnet();
   refreshCarnetDatalist();
-  // Si l'intérimaire est présent dans un ou plusieurs tableaux du mois en cours, propage
+  // Si l'intérimaire est présent dans un ou plusieurs tableaux : propage selon l'entreprise du tableau
   STATE.tableaux.forEach(t => {
     t.emps.forEach(e => {
       if(e.nom === nom){
-        e.salNetHebdo = sal;
-        e.factureHebdo = fac;
+        const r = carnetGetRate(nom, t.entreprise);
+        if(r){
+          e.salNetHebdo = r.salNetHebdo;
+          e.factureHebdo = ttfHebdo(r.salNetHebdo, t.entreprise);
+        }
       }
     });
   });
@@ -1607,8 +1709,8 @@ function loadTestJDSMars2026(){
   // 3) Intérimaires + jours par semaine (utilise le carnet si déjà saisi)
   test.emps.forEach(tEmp => {
     const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === _normalizeName(tEmp.nom));
-    const carnetData = carnetMatch ? CARNET[carnetMatch] : null;
-    const salNet = carnetData?.salNetHebdo || tEmp.salNetHebdo;
+    const rate = carnetMatch ? carnetGetRate(carnetMatch, 'JDS') : null;
+    const salNet = (rate?.salNetHebdo) || tEmp.salNetHebdo;
     newT.emps.push({
       id: STATE.empIdCtr++,
       nom: carnetMatch || tEmp.nom,
@@ -1655,15 +1757,20 @@ function clearCarnetAll(){
 }
 
 function exportCarnetCSV(){
-  const names = Object.keys(CARNET).sort((a,b) => {
-    const ea = (CARNET[a].entreprise||'').localeCompare(CARNET[b].entreprise||'','fr');
-    return ea !== 0 ? ea : a.localeCompare(b,'fr');
-  });
+  const names = Object.keys(CARNET).sort((a,b) => a.localeCompare(b,'fr'));
   if(!names.length){ alert('Le carnet est vide, rien à exporter.'); return; }
   let csv = 'nom;salNetHebdo;factureHebdo;entreprise;lastUsed\n';
+  // Une ligne par (mec × entreprise) pour préserver tous les tarifs
   names.forEach(n => {
     const c = CARNET[n];
-    csv += `${n};${c.salNetHebdo};${c.factureHebdo};${c.entreprise||''};${c.lastUsed||''}\n`;
+    const lastUsed = c.lastUsed || '';
+    if(c.rates){
+      Object.entries(c.rates).forEach(([ent, r]) => {
+        csv += `${n};${r.salNetHebdo||0};${r.factureHebdo||0};${ent==='?'?'':ent};${lastUsed}\n`;
+      });
+    } else {
+      csv += `${n};${c.salNetHebdo||0};${c.factureHebdo||0};${c.entreprise||''};${lastUsed}\n`;
+    }
   });
   const blob = new Blob(["﻿"+csv], { type:'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -1702,16 +1809,22 @@ function addFromCarnet(nom){
     alert(nom + ' est déjà dans ce tableau.');
     return;
   }
+  // Auto-set entreprise du tableau si vide
+  if(!t.entreprise){
+    const primary = carnetPrimary(nom);
+    if(primary?.entreprise) t.entreprise = primary.entreprise;
+  }
+  // Récupère le tarif spécifique à l'entreprise du tableau
+  const rate = carnetGetRate(nom, t.entreprise);
+  const salNet = rate?.salNetHebdo || 0;
   t.emps.push({
     id: STATE.empIdCtr++,
     nom: nom,
-    salNetHebdo: c.salNetHebdo || 0,
-    factureHebdo: c.factureHebdo || 0,
+    salNetHebdo: salNet,
+    factureHebdo: ttfHebdo(salNet, t.entreprise),
     jours: {},
     primes: [],
   });
-  // Auto-set entreprise du tableau si vide et que la personne a une entreprise
-  if(!t.entreprise && c.entreprise) t.entreprise = c.entreprise;
   saveStorage();
   render();
   closeModal();
@@ -1719,8 +1832,13 @@ function addFromCarnet(nom){
 
 function addAllFromCarnetEntreprise(entreprise){
   const target = (entreprise||'').trim();
+  const targetK = _entKey(target);
   const matchingNames = Object.keys(CARNET)
-    .filter(n => ((CARNET[n].entreprise||'').trim()) === target)
+    .filter(n => {
+      const c = CARNET[n];
+      if(c?.rates) return Object.keys(c.rates).some(k => k === targetK);
+      return ((c?.entreprise||'').trim()) === target;
+    })
     .sort((a,b)=>a.localeCompare(b,'fr'));
   if(!matchingNames.length){ alert('Aucun intérimaire dans cette entreprise.'); return; }
 
@@ -1742,12 +1860,13 @@ function addAllFromCarnetEntreprise(entreprise){
   let added = 0, skipped = 0;
   matchingNames.forEach(n => {
     if(t.emps.find(e => e.nom === n)){ skipped++; return; }
-    const c = CARNET[n];
+    const rate = carnetGetRate(n, t.entreprise);
+    const salNet = rate?.salNetHebdo || 0;
     t.emps.push({
       id: STATE.empIdCtr++,
       nom: n,
-      salNetHebdo: c.salNetHebdo || 0,
-      factureHebdo: c.factureHebdo || 0,
+      salNetHebdo: salNet,
+      factureHebdo: ttfHebdo(salNet, t.entreprise),
       jours: {},
       primes: [],
     });
@@ -1920,12 +2039,14 @@ function importPresenceCSV(text){
     if(!emp){
       // Avant de créer un emp vide, vérifier si on a ses infos dans le carnet
       const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === normNom);
-      const carnetData = carnetMatch ? CARNET[carnetMatch] : null;
-      const salNet = carnetData ? (carnetData.salNetHebdo||0) : 0;
       // Si le tableau n'a pas d'entreprise mais le carnet en a une, on auto-remplit
-      if(!targetTableau.entreprise && carnetData?.entreprise){
-        targetTableau.entreprise = carnetData.entreprise;
+      if(!targetTableau.entreprise && carnetMatch){
+        const primary = carnetPrimary(carnetMatch);
+        if(primary?.entreprise) targetTableau.entreprise = primary.entreprise;
       }
+      // Récupère le tarif spécifique à l'entreprise du tableau
+      const rate = carnetMatch ? carnetGetRate(carnetMatch, targetTableau.entreprise) : null;
+      const salNet = rate ? (rate.salNetHebdo||0) : 0;
       emp = {
         id: STATE.empIdCtr++,
         nom: carnetMatch || nomRaw,

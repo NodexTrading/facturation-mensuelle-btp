@@ -2081,9 +2081,61 @@ function _isoWeekToThursday(year, week){
   thursday.setDate(week1Mon.getDate() + (week-1)*7 + 3);
   return thursday;
 }
+/* Wrapper multi-blocs : si le fichier contient plusieurs `# chantier:`, on splitte en blocs
+   et on importe chacun comme un tableau indépendant. Sinon, comportement classique. */
 function importPresenceCSV(text){
+  const blocks = _splitCSVMultiBlocks(text);
+  if(blocks.length <= 1) return _importPresenceCSVBlock(text, /*silent*/ false);
+  // Mode multi-bloc : on importe en silencieux puis on fait un récap unique
+  const results = [];
+  blocks.forEach((blockText, i) => {
+    try {
+      const r = _importPresenceCSVBlock(blockText, /*silent*/ true);
+      if(r) results.push(r);
+    } catch(e){
+      results.push({ error: e.message, index: i+1 });
+    }
+  });
+  const totMatched = results.reduce((s,r) => s + (r.matched||0), 0);
+  const totCreated = results.reduce((s,r) => s + (r.created||0), 0);
+  const lines = results.map((r,i) => r.error
+    ? `❌ Tableau ${r.index} : ${r.error}`
+    : `${i+1}. ${r.chantier||'(sans nom)'}${r.entreprise?' · '+r.entreprise:''} → ${(r.created||0)+(r.matched||0)} intérim.`
+  ).join('\n');
+  const switched = results.find(r => r.switchedTo);
+  // Synchronise le sélecteur mois (peut avoir basculé silencieusement)
+  const _ms = document.getElementById('mois');
+  if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
+  render();
+  let msg = `✅ Import multi-tableaux terminé\n\n${blocks.length} tableaux importés · ${totCreated} créés · ${totMatched} mis à jour`;
+  if(switched) msg += `\n📅 Mois basculé sur ${switched.switchedTo}`;
+  msg += `\n\n${lines}`;
+  alert(msg);
+}
+
+function _splitCSVMultiBlocks(text){
+  const lines = text.split(/\r?\n/);
+  const blocks = [];
+  let current = [];
+  let chantierSeenInCurrent = false;
+  for(const line of lines){
+    const trimmed = line.trim();
+    const isChantierHeader = /^#\s*(chantier|site|projet)\s*:/i.test(trimmed);
+    if(isChantierHeader && chantierSeenInCurrent){
+      blocks.push(current.join('\n'));
+      current = [];
+      chantierSeenInCurrent = false;
+    }
+    if(isChantierHeader) chantierSeenInCurrent = true;
+    current.push(line);
+  }
+  if(current.some(l => l.trim().length)) blocks.push(current.join('\n'));
+  return blocks;
+}
+
+function _importPresenceCSVBlock(text, silent){
   let lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
-  if(!lines.length){ alert('Fichier vide.'); return; }
+  if(!lines.length){ if(!silent) alert('Fichier vide.'); return null; }
 
   // BOM UTF-8
   if(lines[0].charCodeAt(0) === 0xFEFF) lines[0] = lines[0].slice(1);
@@ -2106,7 +2158,7 @@ function importPresenceCSV(text){
     }
     lines.shift();
   }
-  if(!lines.length){ alert('Fichier sans données après les en-têtes.'); return; }
+  if(!lines.length){ if(!silent) alert('Fichier sans données après les en-têtes.'); return null; }
 
   // Détection séparateur (sur la ligne d'en-tête réelle)
   const sep = (lines[0].split(';').length >= lines[0].split(',').length) ? ';' : ',';
@@ -2115,8 +2167,8 @@ function importPresenceCSV(text){
   const header = split(lines[0]).map(h => h.toLowerCase());
   const nameCol = header.findIndex(h => /^(nom|name|prenom|prénom)$/.test(h));
   if(nameCol < 0){
-    alert('Pas de colonne « nom » trouvée dans l\'en-tête. Format attendu : nom;S14;S15;…');
-    return;
+    if(!silent) alert('Pas de colonne « nom » trouvée dans l\'en-tête. Format attendu : nom;S14;S15;…');
+    return null;
   }
   // Repère les colonnes semaine (S14, S15, …)
   const weekCols = [];
@@ -2125,8 +2177,8 @@ function importPresenceCSV(text){
     if(m) weekCols.push({col:i, week: parseInt(m[1],10)});
   });
   if(!weekCols.length){
-    alert('Aucune colonne semaine trouvée (attendu : S14, S15, …).');
-    return;
+    if(!silent) alert('Aucune colonne semaine trouvée (attendu : S14, S15, …).');
+    return null;
   }
 
   // Bascule automatique sur le bon mois selon les en-têtes méta OU les semaines du CSV
@@ -2164,14 +2216,17 @@ function importPresenceCSV(text){
   // Si métadonnées présentes (header `# chantier:` / `# entreprise:`) → import 100 % automatique
   if(metaChantier){
     targetTableau = newTableau({ chantier: metaChantier, entreprise: metaEntreprise });
+  } else if(silent){
+    // Mode multi-bloc sans header chantier explicite : on crée un tableau auto-nommé
+    targetTableau = newTableau({ chantier: '(import sans nom)', entreprise: '' });
   } else {
     const askChantier = prompt('Nom du chantier de ce relevé ?\n(Ex : « JDS - LE BAIA », « MGB - LE PATIO »…)\n\nLaisse vide pour ajouter au dernier tableau.', '');
-    if(askChantier === null){ return; }
+    if(askChantier === null){ return null; }
     if(askChantier.trim() === ''){
       targetTableau = STATE.tableaux[STATE.tableaux.length - 1];
     } else {
       const askEntreprise = prompt(`Nom de l'entreprise pour « ${askChantier.trim()} » ? (laisse vide si tu ne sais pas)`, '');
-      if(askEntreprise === null) return;
+      if(askEntreprise === null) return null;
       targetTableau = newTableau({ chantier: askChantier.trim(), entreprise: (askEntreprise||'').trim() });
     }
   }
@@ -2239,7 +2294,14 @@ function importPresenceCSV(text){
   }
 
   saveStorage();
-  render();
+  if(!silent) render();
+
+  const result = {
+    chantier: targetTableau.chantier,
+    entreprise: targetTableau.entreprise,
+    matched, created, missingPresences, switchedTo,
+  };
+  if(silent) return result;
 
   let msg = `✅ Import terminé\n\n${matched} intérimaire${matched>1?'s':''} mis à jour`;
   if(switchedTo){
@@ -2250,6 +2312,7 @@ function importPresenceCSV(text){
     if(missingPresences.length > 8) msg += `\n   … et ${missingPresences.length-8} de plus`;
   }
   alert(msg);
+  return result;
 }
 
 /* ════════ IMPORT FROM URL HASH — crée un nouveau tableau ════════ */

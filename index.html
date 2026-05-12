@@ -796,17 +796,22 @@ function loadStorage(){
       if(typeof d.primeIdCtr==='number') STATE.primeIdCtr = d.primeIdCtr;
       if(typeof d.tableauIdCtr==='number') STATE.tableauIdCtr = d.tableauIdCtr;
       if(Array.isArray(d.tableaux)){
-        STATE.tableaux = d.tableaux.map(t => ({
-          id: t.id || (STATE.tableauIdCtr++),
-          chantier: t.chantier || '',
-          entreprise: t.entreprise || '',
-          emps: (t.emps||[]).map(e => ({
-            ...e,
-            primes: e.primes || [],
-            jours: e.jours || {},
-          })),
-          feries: t.feries || [],
-        }));
+        STATE.tableaux = d.tableaux.map(t => {
+          const ent = t.entreprise || '';
+          return {
+            id: t.id || (STATE.tableauIdCtr++),
+            chantier: t.chantier || '',
+            entreprise: ent,
+            emps: (t.emps||[]).map(e => ({
+              ...e,
+              primes: e.primes || [],
+              jours: e.jours || {},
+              // Migration : recalcul du TTF selon la nouvelle règle (coef × sal_net)
+              factureHebdo: ttfHebdo(e.salNetHebdo, ent),
+            })),
+            feries: t.feries || [],
+          };
+        });
         return true;
       }
     }
@@ -839,6 +844,29 @@ function clearStorage(){ try{ localStorage.removeItem(STORAGE_KEY); }catch(e){} 
 /* ════════ UTILS ════════ */
 const f = (n) => isFinite(n) ? n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €' : '–';
 const fInt = (n) => isFinite(n) ? n.toLocaleString('fr-FR') : '0';
+
+/* ════════ COEF CLIENT (TTF = sal_net × coef) ════════ */
+const COEF_CLIENTS = {
+  'ACTIBAT': 1.82,
+  'JDS': 1.82,
+  'JDS CONSTRUCTION': 1.82,
+  'MGB': 1.78,
+};
+const COEF_DEFAULT = 1.82;
+function coefClient(entreprise){
+  const key = (entreprise||'').toString().trim().toUpperCase();
+  if(!key) return COEF_DEFAULT;
+  if(COEF_CLIENTS[key] != null) return COEF_CLIENTS[key];
+  // Match partiel : « JDS Construction » contient « JDS », etc.
+  for(const k of Object.keys(COEF_CLIENTS)){
+    if(key.indexOf(k) >= 0) return COEF_CLIENTS[k];
+  }
+  return COEF_DEFAULT;
+}
+/* TTF hebdo dérivé du salaire net + entreprise du tableau */
+function ttfHebdo(salNetHebdo, entreprise){
+  return (parseFloat(salNetHebdo)||0) * coefClient(entreprise);
+}
 
 function getISOWeek(date){
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -900,8 +928,12 @@ function delTableau(tableauId){
 function setTableauField(tableauId, field, value){
   const t = getTableau(tableauId); if(!t) return;
   t[field] = (value||'').toString();
+  // Si l'entreprise change : recalcul de tous les TTF du tableau (coef différent)
+  if(field === 'entreprise'){
+    t.emps.forEach(e => { e.factureHebdo = ttfHebdo(e.salNetHebdo, t.entreprise); });
+  }
   saveStorage();
-  computeGlobalTotals();
+  render();
   refreshEntrepriseDatalist();
 }
 
@@ -913,11 +945,15 @@ function setEmpField(tableauId, empId, field, value){
     const trimmed = (value||'').trim();
     if(trimmed && CARNET[trimmed]){
       if(!e.salNetHebdo) e.salNetHebdo = CARNET[trimmed].salNetHebdo || 0;
-      if(!e.factureHebdo) e.factureHebdo = CARNET[trimmed].factureHebdo || 0;
     }
+  } else if(field==='factureHebdo'){
+    // Plus saisie directe : factureHebdo est dérivé de salNetHebdo × coef(entreprise)
+    return;
   } else {
     e[field] = parseFloat(value)||0;
   }
+  // factureHebdo toujours synchronisé pour rétrocompat (export, calculs legacy)
+  e.factureHebdo = ttfHebdo(e.salNetHebdo, t.entreprise);
   carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo, t.entreprise);
   saveStorage();
   render();
@@ -940,7 +976,7 @@ function delEmp(tableauId, empId){
 }
 function addEmp(tableauId){
   const t = getTableau(tableauId); if(!t) return;
-  t.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, factureHebdo:0, jours:{}, primes:[] });
+  t.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, factureHebdo: ttfHebdo(0, t.entreprise), jours:{}, primes:[] });
   saveStorage();
   render();
 }
@@ -995,12 +1031,16 @@ function renderEmpTableHTML(t, weeks){
   if(t.emps.length === 0){
     return `<div class="empty"><div class="ic">👷</div><p>Aucun intérimaire dans ce tableau. Clique « + Intérimaire ».</p></div>`;
   }
-  let head = `<div class="t-wrap"><table class="t"><thead><tr>
+  const coef = coefClient(t.entreprise);
+  const coefLabel = `<span class="mono" style="font-size:11px;color:var(--text-muted);font-weight:600">×${coef.toFixed(2).replace('.',',')}</span>`;
+  let head = `<div style="padding:8px 24px 0;font-size:11px;color:var(--text-muted);font-weight:600">
+    💡 TTF dérivé automatiquement : <strong style="color:var(--text)">sal. net × ${coef.toFixed(2).replace('.',',')}</strong> (coef ${_esc((t.entreprise||'défaut').toUpperCase())}).
+  </div>
+  <div class="t-wrap"><table class="t"><thead><tr>
     <th>Nom / Prénom</th>
     <th class="right">Sal. net hebdo</th>
-    <th class="right">Fact. hebdo</th>
     <th class="right">€/J net</th>
-    <th class="right">€/J fact.</th>`;
+    <th class="right">€/J fact. ${coefLabel}</th>`;
   weeks.forEach(w => head += `<th class="week">S${w}</th>`);
   head += `<th class="center">Total/JR</th>
     <th class="salaire">SALAIRE</th>
@@ -1011,7 +1051,8 @@ function renderEmpTableHTML(t, weeks){
   let body='';
   let tSal=0, tFac=0, tJr=0;
   t.emps.forEach(e => {
-    const tjNet = e.salNetHebdo / 5, tjFac = e.factureHebdo / 5;
+    const ttf = ttfHebdo(e.salNetHebdo, t.entreprise);
+    const tjNet = e.salNetHebdo / 5, tjFac = ttf / 5;
     let totJr = 0;
     weeks.forEach(w => totJr += (e.jours[w]||0));
     const salJ = totJr * tjNet, facJ = totJr * tjFac;
@@ -1023,9 +1064,8 @@ function renderEmpTableHTML(t, weeks){
     body += `<tr>
       <td><input class="t-input name" list="carnet-datalist" value="${_esc(e.nom)}" placeholder="Nom Prénom" oninput="setEmpField(${t.id},${e.id},'nom',this.value)"></td>
       <td class="right"><input class="t-input eur" value="${e.salNetHebdo}" oninput="setEmpField(${t.id},${e.id},'salNetHebdo',this.value)"></td>
-      <td class="right"><input class="t-input eur" value="${e.factureHebdo}" oninput="setEmpField(${t.id},${e.id},'factureHebdo',this.value)"></td>
       <td class="right">${f(tjNet)}</td>
-      <td class="right">${f(tjFac)}</td>`;
+      <td class="right" style="color:var(--accent-dark);font-weight:600">${f(tjFac)}</td>`;
     weeks.forEach(w => {
       body += `<td class="center"><input class="t-input day" value="${e.jours[w]||0}" oninput="setEmpJours(${t.id},${e.id},${w},this.value)"></td>`;
     });
@@ -1040,7 +1080,7 @@ function renderEmpTableHTML(t, weeks){
     // Lignes primes
     primes.forEach(p => {
       body += `<tr style="background:rgba(243,150,39,.08)">
-        <td colspan="${5+weeks.length}" style="padding-left:50px;font-style:italic;color:var(--accent-dark);font-family:'Instrument Sans',sans-serif">↳ Prime : ${_esc(p.label)} ${p.refacture?'<span style="font-size:10px;background:var(--accent);color:white;padding:1px 6px;border-radius:4px;margin-left:6px">refacturée</span>':'<span style="font-size:10px;color:var(--text-muted);margin-left:6px">(non refacturée)</span>'}</td>
+        <td colspan="${4+weeks.length}" style="padding-left:50px;font-style:italic;color:var(--accent-dark);font-family:'Instrument Sans',sans-serif">↳ Prime : ${_esc(p.label)} ${p.refacture?'<span style="font-size:10px;background:var(--accent);color:white;padding:1px 6px;border-radius:4px;margin-left:6px">refacturée</span>':'<span style="font-size:10px;color:var(--text-muted);margin-left:6px">(non refacturée)</span>'}</td>
         <td class="center" style="font-style:italic;color:var(--accent-dark)">—</td>
         <td class="right" style="color:var(--accent-dark)">+${f(p.montant)}</td>
         <td class="right" style="color:var(--accent-dark)">${p.refacture?'+'+f(p.montant):'—'}</td>
@@ -1049,7 +1089,7 @@ function renderEmpTableHTML(t, weeks){
     });
   });
   body += `<tr class="t-row-tot">
-    <td colspan="${5+weeks.length}">TOTAL — ${t.emps.length} intérimaire${t.emps.length>1?'s':''}</td>
+    <td colspan="${4+weeks.length}">TOTAL — ${t.emps.length} intérimaire${t.emps.length>1?'s':''}</td>
     <td class="center">${tJr}</td>
     <td class="right">${f(tSal)}</td>
     <td class="right">${f(tFac)}</td>
@@ -1487,16 +1527,20 @@ function saveCarnetEdit(nom){
   openCarnet();
 }
 function openCarnetBulkAdd(){
+  const coefLines = Object.entries(COEF_CLIENTS).map(([k,v]) => `<code>${k}</code> ×${v.toFixed(2).replace('.',',')}`).join(' · ');
   const html = `
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
       Colle <strong>une ligne par intérimaire</strong>, au format :
     </p>
-    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px">Nom Prénom;sal_net_hebdo;facture_hebdo;entreprise</pre>
+    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px">Nom Prénom;sal_net_hebdo;entreprise</pre>
+    <div style="font-size:11px;color:var(--text-muted);background:var(--primary-soft);border:1px solid var(--primary-light);border-radius:9px;padding:9px 12px;margin-bottom:12px">
+      💡 Le facturé est dérivé automatiquement : ${coefLines} (défaut ${COEF_DEFAULT.toFixed(2).replace('.',',')}). Plus besoin de saisir le TTF.
+    </div>
     <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Exemple :</p>
-    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.7">PEREIRA VARELA EDGAR;850;1547;ACTIBAT
-BORGES SANCHES ROBALO AUGUSTO;850;1547;ACTIBAT
-DIALLO ABDOUL;720;1320;MGB</pre>
-    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Séparateurs acceptés : <code>;</code> · <code>tabulation</code>. Tu peux laisser le sal/fac/entreprise vides (auto-remplis ou modifiables plus tard).</p>
+    <pre style="background:var(--bg-2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.7">PEREIRA VARELA EDGAR;850;ACTIBAT
+BORGES SANCHES ROBALO AUGUSTO;850;ACTIBAT
+DIALLO ABDOUL;720;MGB</pre>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Séparateurs acceptés : <code>;</code> · <code>tabulation</code>. Sal_net ou entreprise vide accepté (auto-rempli plus tard).</p>
     <textarea id="carnet-bulk-input" placeholder="Colle ta liste ici…" style="width:100%;min-height:220px;padding:12px;border:1.5px solid var(--border);border-radius:11px;background:var(--bg-2);font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);outline:none;resize:vertical;line-height:1.5"></textarea>
     <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-ghost" style="padding:11px 16px;font-size:13px;min-height:auto" onclick="openCarnet()">← Retour</button>
@@ -1512,13 +1556,13 @@ function processBulkAddCarnet(){
 
   let added=0, updated=0, skipped=0;
   lines.forEach(line => {
-    // On ne filtre PAS les vides ici : on garde la position des colonnes (sal/fac peuvent être vides)
     const parts = line.split(/[;\t]/).map(p => p.trim());
     const nom = (parts[0]||'').trim();
     if(!nom){ skipped++; return; }
     const sal = parts[1] && parts[1] !== '' ? (parseFloat(parts[1].replace(',','.'))||0) : 0;
-    const fac = parts[2] && parts[2] !== '' ? (parseFloat(parts[2].replace(',','.'))||0) : 0;
-    const ent = (parts[3]||'').trim();
+    const ent = (parts[2]||'').trim();
+    // TTF dérivé automatiquement du sal × coef(entreprise)
+    const fac = ttfHebdo(sal, ent);
     if(CARNET[nom]) updated++; else added++;
     carnetUpsert(nom, sal, fac, ent);
   });
@@ -1564,15 +1608,16 @@ function loadTestJDSMars2026(){
   test.emps.forEach(tEmp => {
     const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === _normalizeName(tEmp.nom));
     const carnetData = carnetMatch ? CARNET[carnetMatch] : null;
+    const salNet = carnetData?.salNetHebdo || tEmp.salNetHebdo;
     newT.emps.push({
       id: STATE.empIdCtr++,
       nom: carnetMatch || tEmp.nom,
-      salNetHebdo: carnetData?.salNetHebdo || tEmp.salNetHebdo,
-      factureHebdo: carnetData?.factureHebdo || tEmp.factureHebdo,
+      salNetHebdo: salNet,
+      factureHebdo: ttfHebdo(salNet, 'JDS'), // dérivé du coef JDS = 1.82
       jours: { ...tEmp.jours },
       primes: [],
     });
-    carnetUpsert(tEmp.nom, tEmp.salNetHebdo, tEmp.factureHebdo, 'JDS');
+    carnetUpsert(tEmp.nom, salNet, ttfHebdo(salNet, 'JDS'), 'JDS');
   });
 
   // 4) Synchronise le sélecteur mois
@@ -1770,13 +1815,33 @@ function _isoWeekToThursday(year, week){
   return thursday;
 }
 function importPresenceCSV(text){
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
+  let lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
   if(!lines.length){ alert('Fichier vide.'); return; }
 
   // BOM UTF-8
   if(lines[0].charCodeAt(0) === 0xFEFF) lines[0] = lines[0].slice(1);
 
-  // Détection séparateur
+  // Lecture des en-têtes de métadonnées en haut du CSV (lignes commençant par #)
+  // Format reconnu : "# chantier: XXX", "# entreprise: YYY", "# mois: 2026-02"
+  let metaChantier = '', metaEntreprise = '';
+  let metaYear = null, metaMonth = null;
+  while(lines.length && lines[0].startsWith('#')){
+    const m = lines[0].slice(1).split(':');
+    if(m.length >= 2){
+      const key = m[0].trim().toLowerCase();
+      const val = m.slice(1).join(':').trim();
+      if(/^(chantier|site|projet)$/.test(key)) metaChantier = val;
+      else if(/^(entreprise|client|company)$/.test(key)) metaEntreprise = val;
+      else if(/^mois$/.test(key)){
+        const mm = val.match(/^(\d{4})-(\d{1,2})$/);
+        if(mm){ metaYear = parseInt(mm[1],10); metaMonth = parseInt(mm[2],10) - 1; }
+      }
+    }
+    lines.shift();
+  }
+  if(!lines.length){ alert('Fichier sans données après les en-têtes.'); return; }
+
+  // Détection séparateur (sur la ligne d'en-tête réelle)
   const sep = (lines[0].split(';').length >= lines[0].split(',').length) ? ';' : ',';
   const split = l => l.split(sep).map(c => c.trim());
 
@@ -1797,40 +1862,51 @@ function importPresenceCSV(text){
     return;
   }
 
-  // Bascule automatique sur le bon mois selon les semaines du CSV
-  // (sinon les jours sont stockés mais pas affichés car les colonnes du mois en cours ne matchent pas)
-  const weeksFound = weekCols.map(w => w.week);
-  const monthVotes = {};
-  weeksFound.forEach(w => {
-    const thu = _isoWeekToThursday(STATE.year, w);
-    const key = thu.getFullYear() + '-' + thu.getMonth();
-    monthVotes[key] = (monthVotes[key]||0) + 1;
-  });
-  const winner = Object.entries(monthVotes).sort((a,b) => b[1]-a[1])[0];
+  // Bascule automatique sur le bon mois selon les en-têtes méta OU les semaines du CSV
   let switchedTo = null;
-  if(winner){
-    const [winY, winM] = winner[0].split('-').map(Number);
-    if(winY !== STATE.year || winM !== STATE.month){
-      STATE.year = winY;
-      STATE.month = winM;
+  if(metaYear !== null && metaMonth !== null){
+    if(metaYear !== STATE.year || metaMonth !== STATE.month){
+      STATE.year = metaYear; STATE.month = metaMonth;
       const _ms = document.getElementById('mois');
       if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
-      switchedTo = `${monthName(winM)} ${winY}`;
+      switchedTo = `${monthName(metaMonth)} ${metaYear}`;
+    }
+  } else {
+    const weeksFound = weekCols.map(w => w.week);
+    const monthVotes = {};
+    weeksFound.forEach(w => {
+      const thu = _isoWeekToThursday(STATE.year, w);
+      const key = thu.getFullYear() + '-' + thu.getMonth();
+      monthVotes[key] = (monthVotes[key]||0) + 1;
+    });
+    const winner = Object.entries(monthVotes).sort((a,b) => b[1]-a[1])[0];
+    if(winner){
+      const [winY, winM] = winner[0].split('-').map(Number);
+      if(winY !== STATE.year || winM !== STATE.month){
+        STATE.year = winY; STATE.month = winM;
+        const _ms = document.getElementById('mois');
+        if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;
+        switchedTo = `${monthName(winM)} ${winY}`;
+      }
     }
   }
 
   // Chaque import CSV crée un NOUVEAU tableau dédié (1 relevé = 1 chantier = 1 tableau)
-  // L'utilisateur définit le nom du chantier juste avant
   ensureFirstTableau();
-  const askChantier = prompt('Nom du chantier de ce relevé ?\n(Ex : « JDS - LE BAIA », « MGB - LE PATIO »…)\n\nLaisse vide pour ajouter au dernier tableau.', '');
   let targetTableau;
-  if(askChantier === null){ return; }
-  if(askChantier.trim() === ''){
-    targetTableau = STATE.tableaux[STATE.tableaux.length - 1];
+  // Si métadonnées présentes (header `# chantier:` / `# entreprise:`) → import 100 % automatique
+  if(metaChantier){
+    targetTableau = newTableau({ chantier: metaChantier, entreprise: metaEntreprise });
   } else {
-    const askEntreprise = prompt(`Nom de l'entreprise pour « ${askChantier.trim()} » ? (laisse vide si tu ne sais pas)`, '');
-    if(askEntreprise === null) return;
-    targetTableau = newTableau({ chantier: askChantier.trim(), entreprise: (askEntreprise||'').trim() });
+    const askChantier = prompt('Nom du chantier de ce relevé ?\n(Ex : « JDS - LE BAIA », « MGB - LE PATIO »…)\n\nLaisse vide pour ajouter au dernier tableau.', '');
+    if(askChantier === null){ return; }
+    if(askChantier.trim() === ''){
+      targetTableau = STATE.tableaux[STATE.tableaux.length - 1];
+    } else {
+      const askEntreprise = prompt(`Nom de l'entreprise pour « ${askChantier.trim()} » ? (laisse vide si tu ne sais pas)`, '');
+      if(askEntreprise === null) return;
+      targetTableau = newTableau({ chantier: askChantier.trim(), entreprise: (askEntreprise||'').trim() });
+    }
   }
 
   let matched=0, created=0, missingPresences=[];
@@ -1845,19 +1921,20 @@ function importPresenceCSV(text){
       // Avant de créer un emp vide, vérifier si on a ses infos dans le carnet
       const carnetMatch = Object.keys(CARNET).find(n => _normalizeName(n) === normNom);
       const carnetData = carnetMatch ? CARNET[carnetMatch] : null;
-      emp = {
-        id: STATE.empIdCtr++,
-        nom: carnetMatch || nomRaw,
-        salNetHebdo: carnetData ? carnetData.salNetHebdo : 0,
-        factureHebdo: carnetData ? carnetData.factureHebdo : 0,
-        jours: {},
-        primes: [],
-      };
-      targetTableau.emps.push(emp);
+      const salNet = carnetData ? (carnetData.salNetHebdo||0) : 0;
       // Si le tableau n'a pas d'entreprise mais le carnet en a une, on auto-remplit
       if(!targetTableau.entreprise && carnetData?.entreprise){
         targetTableau.entreprise = carnetData.entreprise;
       }
+      emp = {
+        id: STATE.empIdCtr++,
+        nom: carnetMatch || nomRaw,
+        salNetHebdo: salNet,
+        factureHebdo: ttfHebdo(salNet, targetTableau.entreprise), // dérivé du coef du tableau
+        jours: {},
+        primes: [],
+      };
+      targetTableau.emps.push(emp);
       created++;
       if(!carnetMatch) missingPresences.push(nomRaw);
     } else {
@@ -1927,7 +2004,8 @@ function importFromHash(){
       data.emps.forEach(e => {
         const nom = e.nom||'';
         const salNetHebdo = parseFloat(e.salNetHebdo)||0;
-        const factureHebdo = parseFloat(e.factureHebdo)||0;
+        // Le facturé du payload est ignoré : on dérive systématiquement du coef du tableau
+        const factureHebdo = ttfHebdo(salNetHebdo, t.entreprise);
         t.emps.push({
           id: STATE.empIdCtr++,
           nom, salNetHebdo, factureHebdo, jours: {}, primes: [],

@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root {
   --bg: #F4F9FE; --card: #fff; --border: #DDE8F4;
@@ -114,17 +115,35 @@ body{
 .day-label{
   font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;
 }
-.day-btn{
+.day-input{
   width:100%;aspect-ratio:1/1.1;border-radius:10px;border:2px solid var(--border);
-  background:var(--card);font-family:inherit;font-size:14px;font-weight:800;
-  color:var(--text);cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;
-  padding:0;min-height:42px;
+  background:var(--card);font-family:inherit;font-size:15px;font-weight:800;
+  color:var(--text);transition:all .12s;text-align:center;outline:none;
+  padding:0;min-height:48px;
 }
-.day-btn:active{transform:scale(.92)}
-.day-btn[data-v="P"]{background:var(--ok);border-color:var(--ok);color:#fff}
-.day-btn[data-v="A"]{background:var(--ko-soft);border-color:var(--ko);color:var(--ko)}
-.day-btn[data-v="F"]{background:var(--warn-soft);border-color:var(--warn);color:#9e6d00}
-.day-btn[data-v="0.5"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.day-input:focus{border-color:var(--primary);background:var(--primary-soft)}
+.day-input.has-value[data-kind="P"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.day-input.has-value[data-kind="A"]{background:var(--ko-soft);border-color:var(--ko);color:var(--ko)}
+.day-input.has-value[data-kind="F"]{background:var(--warn-soft);border-color:var(--warn);color:#9e6d00}
+.day-input.has-value[data-kind="H"]{background:var(--primary-soft);border-color:var(--primary);color:var(--primary-dark)}
+.day-input.has-value[data-kind="num"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+
+/* ── Signature canvas ── */
+.sig-wrap{
+  position:relative;background:#fff;border:2px dashed var(--primary);border-radius:14px;
+  overflow:hidden;margin-top:8px;
+}
+.sig-canvas{
+  display:block;width:100%;height:200px;touch-action:none;background:#fff;
+  cursor:crosshair;
+}
+.sig-empty-hint{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  color:var(--faint);font-size:14px;font-weight:600;pointer-events:none;
+  letter-spacing:.2px;
+}
+.sig-empty-hint.hidden{display:none}
+.sig-actions{display:flex;gap:8px;margin-top:8px}
 
 /* ── Add mec ── */
 .add-mec{
@@ -231,7 +250,10 @@ body{
     </div>
 
     <div class="banner-warn">
-      💡 Touche une case pour cycler : <strong>vide → P</strong> (présent) → <strong>0,5</strong> (demi-jour, moins de 5h) → <strong>F</strong> (férié) → <strong>A</strong> (absent) → vide.
+      💡 Tape ce que tu veux dans chaque case :<br>
+      • <strong>P</strong> = présent (1j) · <strong>A</strong> = absent · <strong>F</strong> = férié · <strong>I</strong> = intempérie<br>
+      • Ou les <strong>heures</strong> : <code>8</code> · <code>7</code> · <code>4</code> · <code>8h30</code><br>
+      • Règle : ≤5h = 0,5j · &gt;5h = 1j
     </div>
 
     <button class="add-mec" onclick="addMec()">＋ Ajouter un intérimaire</button>
@@ -255,17 +277,37 @@ body{
 
     <div class="card">
       <div class="card-title"><span class="ic">📄</span> Résumé</div>
-      <textarea id="export-text" readonly style="width:100%;min-height:200px;padding:14px;border:1.5px solid var(--border);border-radius:12px;background:var(--bg);font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);resize:vertical;line-height:1.5;outline:none" onclick="this.select()"></textarea>
+      <textarea id="export-text" readonly style="width:100%;min-height:160px;padding:14px;border:1.5px solid var(--border);border-radius:12px;background:var(--bg);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text);resize:vertical;line-height:1.5;outline:none" onclick="this.select()"></textarea>
+    </div>
+
+    <!-- ═══ Signature ═══ -->
+    <div class="card">
+      <div class="card-title"><span class="ic">✍️</span> Signature du chef</div>
+      <p class="muted" style="margin:0 0 10px">Signe ci-dessous avec ton doigt (ou la souris) pour valider et générer le PDF officiel.</p>
+      <div class="sig-wrap">
+        <canvas id="sig-canvas" class="sig-canvas"></canvas>
+        <div id="sig-hint" class="sig-empty-hint">✍️ Signe ici</div>
+      </div>
+      <div class="sig-actions">
+        <button class="btn btn-ghost" style="flex:1;min-height:44px;padding:10px 14px;font-size:13px" onclick="clearSignature()">🧽 Effacer</button>
+      </div>
     </div>
 
     <div class="btn-row" style="margin-bottom:10px">
-      <button class="btn btn-success" onclick="sendWhatsApp()">💬 WhatsApp</button>
-      <button class="btn btn-primary" onclick="sendEmail()">📧 Email</button>
+      <button class="btn btn-success btn-block" onclick="generateAndShare()" style="font-size:16px;min-height:60px;flex-basis:100%">
+        📄 Générer PDF signé & envoyer
+      </button>
     </div>
-    <div class="btn-row">
-      <button class="btn btn-ghost" onclick="copyText()">📋 Copier</button>
-      <button class="btn btn-warn" onclick="downloadCSV()">⬇️ CSV</button>
-    </div>
+
+    <details style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
+      <summary style="font-size:13px;font-weight:700;color:var(--muted);cursor:pointer">Options avancées (texte seul, sans signature)</summary>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-ghost" onclick="sendWhatsApp()">💬 WhatsApp</button>
+        <button class="btn btn-ghost" onclick="sendEmail()">📧 Email</button>
+        <button class="btn btn-ghost" onclick="copyText()">📋 Copier</button>
+        <button class="btn btn-ghost" onclick="downloadCSV()">⬇️ CSV</button>
+      </div>
+    </details>
 
     <div style="margin-top:18px">
       <button class="btn btn-ghost btn-block" onclick="backToTeam()">◀ Modifier le pointage</button>
@@ -438,38 +480,64 @@ function renderTeam(){
         ${mec.days.map((v, di) => `
           <div class="day-cell">
             <span class="day-label">${dayLabels[di]}</span>
-            <button class="day-btn" data-v="${v}" onclick="cycleDay(${idx},${di})">${dayDisplay(v)}</button>
+            <input class="day-input ${v?'has-value':''}" data-kind="${dayKind(v)}" type="text" inputmode="text" maxlength="6" value="${escHTML(v)}"
+              oninput="setDay(${idx},${di},this.value,false)"
+              onchange="setDay(${idx},${di},this.value,true)"
+              autocapitalize="characters" autocomplete="off">
           </div>
         `).join('')}
       </div>
     </div>`;
   }).join('');
 }
+/* Convertit une cellule libre (P, A, F, I, "8", "4h30", "0.5"…) en nombre de jours.
+   Règle : ≤5h = 0,5j · >5h = 1j · F/I/A = 0 · vide = 0 */
 function dayValueInJours(v){
-  if(v === 'P') return 1;
-  if(v === '0.5') return 0.5;
-  if(v === 'F' || v === 'A' || v === '' || v === 'I') return 0;
-  // Si c'est un nombre d'heures (string numérique), applique la règle
-  const num = parseFloat(v);
-  if(!isNaN(num) && num > 0){
-    if(num > 5) return 1;
-    return 0.5;
+  if(!v) return 0;
+  const s = v.toString().trim().toUpperCase();
+  if(s === '' || s === 'A' || s === 'AB' || s === 'F' || s === 'I' || s === '/' || s === '-') return 0;
+  if(s === 'P') return 1;
+  // Cas "0.5" / "1" / "0,5"
+  const direct = parseFloat(s.replace(',', '.'));
+  if(!isNaN(direct) && /^\d+([.,]\d+)?$/.test(s.replace(',', '.'))){
+    // Si la valeur est <= 1 (genre 0.5, 1, 0.75) c'est déjà en jours
+    if(direct <= 1) return Math.max(0, Math.min(1, direct));
+    // Sinon c'est des heures (genre 4, 8, 9, 12)
+    if(direct > 5) return 1;
+    if(direct > 0) return 0.5;
+    return 0;
+  }
+  // Cas heures "8h", "8h30", "4H"
+  const mh = s.match(/^(\d+)H(\d{0,2})?$/);
+  if(mh){
+    const hours = parseInt(mh[1],10) + (parseInt(mh[2]||'0',10)/60);
+    if(hours > 5) return 1;
+    if(hours > 0) return 0.5;
+    return 0;
   }
   return 0;
 }
-function dayDisplay(v){
-  if(v === '') return '·';
-  return v;
+/* Détermine le code couleur de la cellule selon ce qu'a tapé le chef */
+function dayKind(v){
+  if(!v) return '';
+  const s = v.toString().trim().toUpperCase();
+  if(s === 'P') return 'P';
+  if(s === 'A' || s === 'AB') return 'A';
+  if(s === 'F') return 'F';
+  if(s === 'I') return 'A';
+  // Heures ou nombre
+  if(/^\d+([.,]\d+)?H?(\d{0,2})?$/.test(s)) {
+    if(/H/.test(s)) return 'H';
+    return 'num';
+  }
+  return '';
 }
-function cycleDay(mecIdx, dayIdx){
-  const cur = STATE.team[mecIdx].days[dayIdx];
-  // cycle : '' → P → 0.5 → F → A → ''
-  const cycle = ['', 'P', '0.5', 'F', 'A'];
-  const i = cycle.indexOf(cur);
-  const next = cycle[(i + 1) % cycle.length] ?? '';
-  STATE.team[mecIdx].days[dayIdx] = next;
+/* MAJ d'une cellule. forceRender=true à la sortie (onchange) pour rafraîchir les couleurs/totaux. */
+function setDay(mecIdx, dayIdx, value, forceRender){
+  const raw = (value||'').toString().trim().toUpperCase();
+  STATE.team[mecIdx].days[dayIdx] = raw;
   save();
-  renderTeam();
+  if(forceRender) renderTeam();
 }
 function escHTML(s){
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -482,6 +550,8 @@ function goToExport(){
   document.getElementById('screen-team').classList.add('hidden');
   document.getElementById('screen-export').classList.remove('hidden');
   buildExport();
+  // Init canvas signature après que la section soit visible (sinon getBoundingClientRect = 0)
+  setTimeout(initSignature, 50);
 }
 function backToTeam(){
   document.getElementById('screen-export').classList.add('hidden');
@@ -587,6 +657,265 @@ function showPicker(html){
 function closePicker(){
   const p = document.getElementById('picker-overlay');
   if(p) p.remove();
+}
+
+/* ════════ SIGNATURE CANVAS ════════ */
+let SIG = { canvas: null, ctx: null, drawing: false, hasContent: false };
+function initSignature(){
+  const canvas = document.getElementById('sig-canvas');
+  if(!canvas) return;
+  SIG.canvas = canvas;
+  // Résolution HD du canvas (rétina-friendly)
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  SIG.ctx = canvas.getContext('2d');
+  SIG.ctx.scale(ratio, ratio);
+  SIG.ctx.lineWidth = 2.5;
+  SIG.ctx.lineCap = 'round';
+  SIG.ctx.lineJoin = 'round';
+  SIG.ctx.strokeStyle = '#0F2B4A';
+  SIG.hasContent = false;
+  document.getElementById('sig-hint').classList.remove('hidden');
+
+  const getPos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const x = (e.touches?.[0]?.clientX ?? e.clientX) - r.left;
+    const y = (e.touches?.[0]?.clientY ?? e.clientY) - r.top;
+    return { x, y };
+  };
+  const start = (e) => {
+    e.preventDefault();
+    SIG.drawing = true;
+    const p = getPos(e);
+    SIG.ctx.beginPath();
+    SIG.ctx.moveTo(p.x, p.y);
+    if(!SIG.hasContent){
+      SIG.hasContent = true;
+      document.getElementById('sig-hint').classList.add('hidden');
+    }
+  };
+  const move = (e) => {
+    if(!SIG.drawing) return;
+    e.preventDefault();
+    const p = getPos(e);
+    SIG.ctx.lineTo(p.x, p.y);
+    SIG.ctx.stroke();
+  };
+  const end = (e) => { SIG.drawing = false; };
+
+  canvas.addEventListener('mousedown', start);
+  canvas.addEventListener('mousemove', move);
+  canvas.addEventListener('mouseup', end);
+  canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove', move, { passive: false });
+  canvas.addEventListener('touchend', end);
+}
+function clearSignature(){
+  if(!SIG.ctx) return;
+  SIG.ctx.clearRect(0, 0, SIG.canvas.width, SIG.canvas.height);
+  SIG.hasContent = false;
+  document.getElementById('sig-hint').classList.remove('hidden');
+}
+function signatureDataURL(){
+  if(!SIG.canvas || !SIG.hasContent) return null;
+  return SIG.canvas.toDataURL('image/png');
+}
+
+/* ════════ GÉNÉRATION PDF ════════ */
+function buildPDFBlob(){
+  if(typeof jspdf === 'undefined' || !jspdf.jsPDF){
+    alert('Librairie PDF non chargée. Recharge la page.');
+    return null;
+  }
+  const sigData = signatureDataURL();
+  if(!sigData){
+    alert('Tu dois signer avant de générer le PDF.');
+    return null;
+  }
+  const { jsPDF } = jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 15;
+  let y = M;
+
+  // ── HEADER ──
+  doc.setFillColor(26, 174, 238);
+  doc.rect(0, 0, W, 22, 'F');
+  doc.setTextColor(255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('POINTAGE CHANTIER', M, 13);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text('FORMA INTERIM', W - M, 13, { align: 'right' });
+  y = 30;
+
+  // ── INFO BOX ──
+  doc.setTextColor(15, 43, 74);
+  doc.setDrawColor(221, 232, 244);
+  doc.setFillColor(244, 249, 254);
+  doc.roundedRect(M, y, W - 2*M, 36, 3, 3, 'FD');
+  const infoY = y + 7;
+  const col1X = M + 5, col2X = W/2 + 5;
+  doc.setFontSize(8);
+  doc.setTextColor(91, 117, 149);
+  doc.text('CHEF DE CHANTIER', col1X, infoY);
+  doc.text('ENTREPRISE', col2X, infoY);
+  doc.text('CHANTIER', col1X, infoY + 14);
+  doc.text('SEMAINE', col2X, infoY + 14);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 43, 74);
+  doc.text(STATE.chef.toUpperCase(), col1X, infoY + 6);
+  doc.text(STATE.entreprise, col2X, infoY + 6);
+  doc.text(STATE.chantier, col1X, infoY + 20);
+  doc.text(STATE.weekLabel, col2X, infoY + 20);
+  y += 42;
+
+  // ── TABLEAU INTÉRIM ──
+  const dayLabels = ['L','M','M','J','V','S','D'];
+  const colWidths = [60, 13, 13, 13, 13, 13, 13, 13, 22]; // nom + 7 jours + total
+  let xCursor = M;
+  doc.setFillColor(26, 174, 238);
+  doc.rect(M, y, W - 2*M, 9, 'F');
+  doc.setTextColor(255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  const headers = ['INTÉRIMAIRE', ...dayLabels, 'JOURS'];
+  xCursor = M;
+  headers.forEach((h, i) => {
+    const w = colWidths[i];
+    doc.text(h, xCursor + w/2, y + 6, { align: 'center' });
+    xCursor += w;
+  });
+  y += 9;
+
+  // Lignes
+  let totalEquipe = 0;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  STATE.team.forEach((m, idx) => {
+    const totMec = m.days.reduce((s,v) => s + dayValueInJours(v), 0);
+    totalEquipe += totMec;
+    const isOdd = idx % 2 === 1;
+    if(isOdd){
+      doc.setFillColor(248, 251, 254);
+      doc.rect(M, y, W - 2*M, 8.5, 'F');
+    }
+    doc.setTextColor(15, 43, 74);
+    xCursor = M;
+    // Nom
+    doc.setFont('helvetica', 'bold');
+    const nomTruncated = m.nom.length > 32 ? m.nom.slice(0, 30) + '…' : m.nom;
+    doc.text(nomTruncated, xCursor + 2, y + 6);
+    xCursor += colWidths[0];
+    // Jours
+    doc.setFont('helvetica', 'normal');
+    m.days.forEach((v, di) => {
+      const w = colWidths[1 + di];
+      const display = v || '·';
+      const isAbs = ['A','AB','F','I'].includes(v.toUpperCase());
+      if(isAbs) doc.setTextColor(232, 93, 93);
+      else if(!v) doc.setTextColor(143, 164, 190);
+      else doc.setTextColor(15, 43, 74);
+      doc.text(display, xCursor + w/2, y + 6, { align: 'center' });
+      xCursor += w;
+    });
+    // Total
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(34, 181, 115);
+    doc.text(totMec + ' j', xCursor + colWidths[8]/2, y + 6, { align: 'center' });
+    y += 8.5;
+  });
+
+  // Total équipe
+  doc.setFillColor(34, 181, 115);
+  doc.rect(M, y, W - 2*M, 10, 'F');
+  doc.setTextColor(255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(`TOTAL ÉQUIPE : ${totalEquipe} jours · ${STATE.team.length} intérimaires`, W/2, y + 7, { align: 'center' });
+  y += 16;
+
+  // ── LÉGENDE ──
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(91, 117, 149);
+  doc.text('P = présent (1j) · A/Ab = absent · F = férié · I = intempérie · 1h–5h = 0,5j · >5h = 1j', M, y);
+  y += 8;
+
+  // ── DÉCLARATION + SIGNATURE ──
+  if(y > 230) y = 230;
+  doc.setFillColor(255, 243, 207);
+  doc.setDrawColor(245, 180, 0);
+  doc.roundedRect(M, y, W - 2*M, 48, 3, 3, 'FD');
+  doc.setTextColor(15, 43, 74);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DÉCLARATION SUR L\'HONNEUR', M + 5, y + 8);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  const declText = `Je soussigné(e) ${STATE.chef.toUpperCase()}, chef de chantier sur ${STATE.chantier} (${STATE.entreprise}),`;
+  const declText2 = `certifie l'exactitude des heures et jours déclarés ci-dessus pour la semaine ${STATE.weekLabel}.`;
+  doc.text(declText, M + 5, y + 14);
+  doc.text(declText2, M + 5, y + 19);
+
+  // Signature : embed PNG du canvas
+  const sigW = 60, sigH = 24;
+  const sigX = W - M - sigW - 5;
+  const sigY = y + 22;
+  doc.setDrawColor(15, 43, 74);
+  doc.setLineWidth(0.3);
+  doc.line(sigX, sigY + sigH + 2, sigX + sigW, sigY + sigH + 2);
+  try {
+    doc.addImage(sigData, 'PNG', sigX, sigY, sigW, sigH);
+  } catch(e) {}
+  doc.setFontSize(7);
+  doc.setTextColor(91, 117, 149);
+  doc.text('Signature', sigX + sigW/2, sigY + sigH + 6, { align: 'center' });
+
+  // Date saisie côté gauche
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('fr-FR') + ' à ' + pad2(now.getHours()) + 'h' + pad2(now.getMinutes());
+  doc.setFontSize(8);
+  doc.text(`Saisi le ${dateStr}`, M + 5, y + 44);
+
+  // ── FOOTER ──
+  doc.setFontSize(7);
+  doc.setTextColor(143, 164, 190);
+  doc.text('Document généré par l\'app Pointage Chantier Forma Interim · Conservation obligatoire 5 ans', W/2, 290, { align: 'center' });
+
+  return doc.output('blob');
+}
+
+function generateAndShare(){
+  if(!SIG?.hasContent){ alert('Tu dois signer avant de générer le PDF.'); return; }
+  if(STATE.team.length === 0){ alert('Ajoute au moins un intérimaire.'); return; }
+  const blob = buildPDFBlob();
+  if(!blob) return;
+  const safeName = `pointage_${(STATE.chantier||'chantier').replace(/[^a-z0-9]+/gi,'_').toLowerCase()}_${STATE.weekISO}_${STATE.chef.toLowerCase()}.pdf`;
+  const file = new File([blob], safeName, { type: 'application/pdf' });
+
+  // Tente Web Share API (mobile : WhatsApp, Email, etc.)
+  if(navigator.canShare && navigator.canShare({ files: [file] })){
+    const txt = `Pointage ${STATE.chantier} · ${STATE.weekLabel} · ${STATE.chef}`;
+    navigator.share({ files: [file], title: txt, text: txt })
+      .catch(err => {
+        if(err?.name !== 'AbortError') downloadPDF(blob, safeName);
+      });
+  } else {
+    // Fallback : téléchargement direct
+    downloadPDF(blob, safeName);
+    alert('PDF téléchargé. Tu peux maintenant le partager via WhatsApp / Email depuis ton dossier Téléchargements.');
+  }
+}
+function downloadPDF(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ════════ INIT ════════ */

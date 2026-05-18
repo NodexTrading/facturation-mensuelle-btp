@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1AAEEE">
+<title>📋 Pointage Chantier — Forma Interim</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F4F9FE; --card: #fff; --border: #DDE8F4;
+  --text: #0F2B4A; --muted: #5B7595; --faint: #8FA4BE;
+  --primary: #1AAEEE; --primary-dark: #1495CE; --primary-soft: #E4F4FC;
+  --accent: #F58A3C; --accent-soft: #FFEEDC;
+  --ok: #22B573; --ok-soft: #DFF6EA;
+  --ko: #E85D5D; --ko-soft: #FCE4E4;
+  --warn: #F5B400; --warn-soft: #FFF3CF;
+  --shadow: 0 6px 24px rgba(15,43,74,.08);
+  --shadow-lg: 0 12px 40px rgba(15,43,74,.15);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100vh;overscroll-behavior:none}
+body{
+  font-family:'Plus Jakarta Sans',-apple-system,sans-serif;
+  background:var(--bg);color:var(--text);font-size:16px;line-height:1.4;
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+
+/* ── Layout ── */
+.app{max-width:600px;margin:0 auto;padding:14px 12px 90px}
+.brand{
+  text-align:center;padding:8px 0 18px;
+}
+.brand-title{
+  font-size:18px;font-weight:800;color:var(--primary);letter-spacing:-.01em;
+}
+.brand-title .orange{color:var(--accent)}
+.brand-sub{font-size:12px;color:var(--muted);margin-top:2px;font-weight:600}
+
+/* ── Cards ── */
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:18px;
+  box-shadow:var(--shadow);padding:18px;margin-bottom:14px;
+}
+.card-title{
+  font-size:13px;font-weight:800;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.card-title .ic{font-size:18px}
+
+/* ── Inputs ── */
+.label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px}
+.input,.select{
+  width:100%;padding:14px 16px;font-family:inherit;font-size:17px;font-weight:600;
+  background:var(--card);border:2px solid var(--border);border-radius:12px;color:var(--text);
+  outline:none;transition:all .15s;
+}
+.input:focus,.select:focus{border-color:var(--primary);background:var(--primary-soft)}
+.input.big{font-size:20px;padding:16px 18px;text-align:center;font-weight:800}
+
+/* ── Boutons gros ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:14px 22px;font-size:15px;font-weight:700;
+  border:2px solid transparent;border-radius:12px;cursor:pointer;
+  font-family:inherit;transition:all .15s;
+  min-height:54px;text-decoration:none;
+}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-primary:active{transform:scale(.98);background:var(--primary-dark)}
+.btn-ghost{background:var(--card);color:var(--text);border-color:var(--border)}
+.btn-ghost:active{background:var(--bg)}
+.btn-success{background:var(--ok);color:#fff;border-color:var(--ok)}
+.btn-warn{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-block{width:100%}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap}
+.btn-row .btn{flex:1;min-width:120px}
+
+/* ── Pills entreprise ── */
+.ent-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ent-pill{
+  padding:18px 8px;border-radius:14px;border:2px solid var(--border);background:var(--card);
+  font-size:15px;font-weight:800;color:var(--text);cursor:pointer;transition:all .15s;
+  text-align:center;
+}
+.ent-pill:active{transform:scale(.96)}
+.ent-pill.active{border-color:var(--primary);background:var(--primary-soft);color:var(--primary-dark)}
+
+/* ── Saisie équipe ── */
+.emp-card{
+  background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:14px;margin-bottom:10px;box-shadow:var(--shadow);
+}
+.emp-name{
+  font-size:15px;font-weight:800;color:var(--text);margin-bottom:10px;
+  display:flex;align-items:center;gap:6px;
+}
+.emp-name .total-badge{
+  margin-left:auto;background:var(--ok-soft);color:var(--ok);
+  padding:4px 10px;border-radius:8px;font-size:13px;font-weight:800;
+  font-family:'JetBrains Mono',monospace;
+}
+.day-row{
+  display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:6px;
+}
+.day-cell{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+}
+.day-label{
+  font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;
+}
+.day-btn{
+  width:100%;aspect-ratio:1/1.1;border-radius:10px;border:2px solid var(--border);
+  background:var(--card);font-family:inherit;font-size:14px;font-weight:800;
+  color:var(--text);cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;
+  padding:0;min-height:42px;
+}
+.day-btn:active{transform:scale(.92)}
+.day-btn[data-v="P"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.day-btn[data-v="A"]{background:var(--ko-soft);border-color:var(--ko);color:var(--ko)}
+.day-btn[data-v="F"]{background:var(--warn-soft);border-color:var(--warn);color:#9e6d00}
+.day-btn[data-v="0.5"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+
+/* ── Add mec ── */
+.add-mec{
+  border:2px dashed var(--primary);background:var(--primary-soft);
+  padding:18px;border-radius:14px;text-align:center;font-size:15px;font-weight:700;
+  color:var(--primary-dark);cursor:pointer;margin-bottom:14px;
+}
+.add-mec:active{background:var(--card)}
+
+/* ── Modal cycle picker ── */
+.picker-overlay{
+  position:fixed;inset:0;background:rgba(15,43,74,.6);z-index:100;
+  display:grid;place-items:flex-end;padding:0;
+}
+.picker{
+  background:var(--card);border-radius:18px 18px 0 0;padding:18px;width:100%;
+  max-height:80vh;overflow-y:auto;
+}
+.picker-title{font-size:14px;font-weight:800;color:var(--text);margin-bottom:14px;text-align:center}
+.picker-opt{
+  width:100%;padding:18px;border:2px solid var(--border);border-radius:12px;
+  background:var(--card);font-family:inherit;font-size:18px;font-weight:800;
+  color:var(--text);cursor:pointer;margin-bottom:8px;text-align:center;
+}
+.picker-opt:active{transform:scale(.98)}
+.picker-opt.large{font-size:24px;padding:24px}
+.picker-opt-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
+
+/* ── Footer fixe ── */
+.footer{
+  position:fixed;bottom:0;left:0;right:0;background:var(--card);
+  border-top:1px solid var(--border);padding:12px 12px calc(12px + env(safe-area-inset-bottom));
+  z-index:50;box-shadow:0 -4px 24px rgba(15,43,74,.08);
+}
+.footer-inner{max-width:600px;margin:0 auto}
+
+/* ── Hide/Show ── */
+.hidden{display:none!important}
+.muted{color:var(--muted);font-size:13px;font-weight:600}
+
+/* ── Banner success ── */
+.banner-ok{
+  background:var(--ok-soft);border:1px solid var(--ok);color:var(--ok);
+  padding:14px 16px;border-radius:12px;font-weight:700;margin-bottom:14px;
+  display:flex;gap:10px;align-items:center;
+}
+.banner-warn{
+  background:var(--warn-soft);border:1px solid var(--warn);color:#9e6d00;
+  padding:12px 14px;border-radius:12px;font-size:13px;font-weight:600;margin-bottom:12px;
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="brand">
+    <div class="brand-title">📋 POINTAGE <span class="orange">CHANTIER</span></div>
+    <div class="brand-sub">Forma Interim · saisie chef de chantier</div>
+  </header>
+
+  <!-- ═══ ÉCRAN 1 : SETUP ═══ -->
+  <section id="screen-setup">
+    <div class="card">
+      <div class="card-title"><span class="ic">👤</span> Toi (chef)</div>
+      <input id="chef-nom" class="input big" placeholder="Ton prénom" autocomplete="given-name">
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="ic">🏢</span> Entreprise</div>
+      <div class="ent-row" id="ent-pills">
+        <button class="ent-pill" data-ent="ACTIBAT">ACTIBAT</button>
+        <button class="ent-pill" data-ent="JDS">JDS</button>
+        <button class="ent-pill" data-ent="MGB">MGB</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="ic">📍</span> Chantier</div>
+      <input id="chantier-nom" class="input" placeholder="Ex : Marinoni, La Place, Le Muy…" autocomplete="off">
+      <p class="muted" style="margin-top:6px">Tape le nom du chantier exactement comme tu l'écris d'habitude.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="ic">📅</span> Semaine pointée</div>
+      <input id="semaine" class="input big mono" placeholder="">
+      <p class="muted" style="margin-top:6px">Semaine pré-remplie sur celle en cours. Tu peux changer.</p>
+    </div>
+
+    <button class="btn btn-primary btn-block" onclick="goToTeam()" style="margin-top:8px">
+      Suivant → Mon équipe ➡️
+    </button>
+  </section>
+
+  <!-- ═══ ÉCRAN 2 : ÉQUIPE ═══ -->
+  <section id="screen-team" class="hidden">
+    <div class="card" style="background:var(--primary-soft);border-color:var(--primary)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn btn-ghost" style="min-height:auto;padding:8px 12px;font-size:13px" onclick="backToSetup()">◀</button>
+        <div style="flex:1">
+          <div style="font-size:11px;color:var(--primary-dark);font-weight:800;text-transform:uppercase;letter-spacing:.5px">Chantier · Semaine</div>
+          <div id="team-header" style="font-size:15px;font-weight:800;color:var(--text);margin-top:2px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="banner-warn">
+      💡 Touche une case pour cycler : <strong>vide → P</strong> (présent) → <strong>0,5</strong> (demi-jour, moins de 5h) → <strong>F</strong> (férié) → <strong>A</strong> (absent) → vide.
+    </div>
+
+    <button class="add-mec" onclick="addMec()">＋ Ajouter un intérimaire</button>
+
+    <div id="team-list"></div>
+
+    <button class="btn btn-success btn-block" onclick="goToExport()" style="margin-top:14px;font-size:16px">
+      Terminer & envoyer ✉️
+    </button>
+  </section>
+
+  <!-- ═══ ÉCRAN 3 : EXPORT ═══ -->
+  <section id="screen-export" class="hidden">
+    <div class="banner-ok">
+      <span style="font-size:24px">✅</span>
+      <div>
+        <div style="font-size:15px">Pointage prêt</div>
+        <div style="font-size:12px;font-weight:500;opacity:.85" id="export-summary"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="ic">📄</span> Résumé</div>
+      <textarea id="export-text" readonly style="width:100%;min-height:200px;padding:14px;border:1.5px solid var(--border);border-radius:12px;background:var(--bg);font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);resize:vertical;line-height:1.5;outline:none" onclick="this.select()"></textarea>
+    </div>
+
+    <div class="btn-row" style="margin-bottom:10px">
+      <button class="btn btn-success" onclick="sendWhatsApp()">💬 WhatsApp</button>
+      <button class="btn btn-primary" onclick="sendEmail()">📧 Email</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="copyText()">📋 Copier</button>
+      <button class="btn btn-warn" onclick="downloadCSV()">⬇️ CSV</button>
+    </div>
+
+    <div style="margin-top:18px">
+      <button class="btn btn-ghost btn-block" onclick="backToTeam()">◀ Modifier le pointage</button>
+    </div>
+    <div style="margin-top:8px">
+      <button class="btn btn-ghost btn-block" onclick="resetAll()" style="color:var(--ko);border-color:rgba(232,93,93,.3)">🗑 Tout effacer & recommencer</button>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ════════ STATE ════════ */
+const STATE = {
+  chef: '',
+  entreprise: '',
+  chantier: '',
+  weekISO: '',
+  weekLabel: '',
+  weekDates: { start: null, end: null },
+  team: [], // [{nom, days: [L,M,M,J,V,S,D]}]
+};
+const STORAGE_KEY = 'forma_pointage_v1';
+
+/* ════════ UTILS ════════ */
+function pad2(n){ return String(n).padStart(2,'0'); }
+function fmtDM(d){ return pad2(d.getDate())+'/'+pad2(d.getMonth()+1); }
+function getISOWeek(date){
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return { week: Math.ceil((((d-yearStart)/86400000)+1)/7), year: d.getUTCFullYear() };
+}
+function weekToMondayFriday(year, week){
+  const jan4 = new Date(year, 0, 4);
+  const jan4Dow = jan4.getDay() || 7;
+  const week1Mon = new Date(year, 0, 4 - (jan4Dow - 1));
+  const monday = new Date(week1Mon);
+  monday.setDate(week1Mon.getDate() + (week-1)*7);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  return { monday, sunday };
+}
+function currentWeekString(){
+  const now = new Date();
+  const w = getISOWeek(now);
+  const { monday, sunday } = weekToMondayFriday(w.year, w.week);
+  STATE.weekISO = 'S'+w.week;
+  STATE.weekDates = { start: monday, end: sunday };
+  STATE.weekLabel = `S${w.week} (${fmtDM(monday)} → ${fmtDM(sunday)} ${w.year})`;
+  return STATE.weekLabel;
+}
+
+/* ════════ STORAGE ════════ */
+function save(){
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch(e){}
+}
+function load(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return;
+    const s = JSON.parse(raw);
+    Object.assign(STATE, s);
+    // Reconstitue les Dates depuis string
+    if(STATE.weekDates?.start) STATE.weekDates.start = new Date(STATE.weekDates.start);
+    if(STATE.weekDates?.end) STATE.weekDates.end = new Date(STATE.weekDates.end);
+  } catch(e){}
+}
+
+/* ════════ SETUP ════════ */
+function initSetup(){
+  load();
+  document.getElementById('chef-nom').value = STATE.chef || '';
+  document.getElementById('chantier-nom').value = STATE.chantier || '';
+  if(STATE.entreprise) selectEnt(STATE.entreprise);
+  document.getElementById('semaine').value = STATE.weekLabel || currentWeekString();
+}
+function selectEnt(ent){
+  STATE.entreprise = ent;
+  document.querySelectorAll('.ent-pill').forEach(b => {
+    b.classList.toggle('active', b.dataset.ent === ent);
+  });
+}
+document.getElementById('ent-pills').addEventListener('click', e => {
+  if(e.target.matches('.ent-pill')) selectEnt(e.target.dataset.ent);
+});
+document.getElementById('semaine').addEventListener('click', () => openWeekPicker());
+
+function goToTeam(){
+  STATE.chef = document.getElementById('chef-nom').value.trim();
+  STATE.chantier = document.getElementById('chantier-nom').value.trim();
+  if(!STATE.chef){ alert('Indique ton prénom.'); return; }
+  if(!STATE.entreprise){ alert('Sélectionne l\'entreprise.'); return; }
+  if(!STATE.chantier){ alert('Indique le chantier.'); return; }
+  save();
+  document.getElementById('screen-setup').classList.add('hidden');
+  document.getElementById('screen-team').classList.remove('hidden');
+  document.getElementById('team-header').textContent =
+    `${STATE.chantier} · ${STATE.entreprise} · ${STATE.weekLabel}`;
+  renderTeam();
+}
+function backToSetup(){
+  document.getElementById('screen-team').classList.add('hidden');
+  document.getElementById('screen-setup').classList.remove('hidden');
+}
+
+/* ════════ WEEK PICKER ════════ */
+function openWeekPicker(){
+  const now = new Date();
+  const opts = [];
+  // 4 semaines passées + actuelle + 1 future
+  for(let i=-4; i<=1; i++){
+    const d = new Date(now); d.setDate(d.getDate() + i*7);
+    const w = getISOWeek(d);
+    const { monday, sunday } = weekToMondayFriday(w.year, w.week);
+    const label = `S${w.week} (${fmtDM(monday)} → ${fmtDM(sunday)} ${w.year})`;
+    opts.push({ year: w.year, week: w.week, monday, sunday, label });
+  }
+  const html = `<div class="picker-title">Choisis la semaine</div>` +
+    opts.reverse().map(o =>
+      `<button class="picker-opt" onclick="pickWeek(${o.year},${o.week})">${o.label}${o.label === STATE.weekLabel ? ' ✓' : ''}</button>`
+    ).join('') +
+    `<button class="picker-opt" style="background:var(--bg);color:var(--muted)" onclick="closePicker()">Annuler</button>`;
+  showPicker(html);
+}
+function pickWeek(year, week){
+  const { monday, sunday } = weekToMondayFriday(year, week);
+  STATE.weekISO = 'S'+week;
+  STATE.weekDates = { start: monday, end: sunday };
+  STATE.weekLabel = `S${week} (${fmtDM(monday)} → ${fmtDM(sunday)} ${year})`;
+  document.getElementById('semaine').value = STATE.weekLabel;
+  closePicker();
+}
+
+/* ════════ ÉQUIPE ════════ */
+function addMec(){
+  const nom = prompt('Nom de l\'intérimaire :', '');
+  if(!nom || !nom.trim()) return;
+  const cleanNom = nom.trim().toUpperCase();
+  if(STATE.team.find(m => m.nom === cleanNom)){
+    alert('Ce mec est déjà dans la liste.');
+    return;
+  }
+  STATE.team.push({ nom: cleanNom, days: ['','','','','','',''] });
+  save();
+  renderTeam();
+}
+function removeMec(idx){
+  if(!confirm('Retirer cet intérimaire ?')) return;
+  STATE.team.splice(idx, 1);
+  save();
+  renderTeam();
+}
+function renderTeam(){
+  const list = document.getElementById('team-list');
+  if(STATE.team.length === 0){
+    list.innerHTML = `<p class="muted" style="text-align:center;padding:24px;background:var(--card);border-radius:14px;border:1px dashed var(--border)">
+      Aucun intérimaire encore. Touche <strong style="color:var(--primary)">＋ Ajouter</strong>.
+    </p>`;
+    return;
+  }
+  const dayLabels = ['L','M','M','J','V','S','D'];
+  list.innerHTML = STATE.team.map((mec, idx) => {
+    const total = mec.days.reduce((s,v) => s + dayValueInJours(v), 0);
+    return `<div class="emp-card">
+      <div class="emp-name">
+        ${escHTML(mec.nom)}
+        <span class="total-badge">${total} j</span>
+        <button onclick="removeMec(${idx})" style="background:none;border:none;color:var(--ko);font-size:18px;cursor:pointer;padding:4px;margin-left:6px">🗑</button>
+      </div>
+      <div class="day-row">
+        ${mec.days.map((v, di) => `
+          <div class="day-cell">
+            <span class="day-label">${dayLabels[di]}</span>
+            <button class="day-btn" data-v="${v}" onclick="cycleDay(${idx},${di})">${dayDisplay(v)}</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+function dayValueInJours(v){
+  if(v === 'P') return 1;
+  if(v === '0.5') return 0.5;
+  if(v === 'F' || v === 'A' || v === '' || v === 'I') return 0;
+  // Si c'est un nombre d'heures (string numérique), applique la règle
+  const num = parseFloat(v);
+  if(!isNaN(num) && num > 0){
+    if(num > 5) return 1;
+    return 0.5;
+  }
+  return 0;
+}
+function dayDisplay(v){
+  if(v === '') return '·';
+  return v;
+}
+function cycleDay(mecIdx, dayIdx){
+  const cur = STATE.team[mecIdx].days[dayIdx];
+  // cycle : '' → P → 0.5 → F → A → ''
+  const cycle = ['', 'P', '0.5', 'F', 'A'];
+  const i = cycle.indexOf(cur);
+  const next = cycle[(i + 1) % cycle.length] ?? '';
+  STATE.team[mecIdx].days[dayIdx] = next;
+  save();
+  renderTeam();
+}
+function escHTML(s){
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ════════ EXPORT ════════ */
+function goToExport(){
+  if(STATE.team.length === 0){ alert('Ajoute au moins un intérimaire.'); return; }
+  save();
+  document.getElementById('screen-team').classList.add('hidden');
+  document.getElementById('screen-export').classList.remove('hidden');
+  buildExport();
+}
+function backToTeam(){
+  document.getElementById('screen-export').classList.add('hidden');
+  document.getElementById('screen-team').classList.remove('hidden');
+}
+function buildExport(){
+  const totals = STATE.team.map(m => m.days.reduce((s,v)=>s+dayValueInJours(v),0));
+  const totalJ = totals.reduce((a,b)=>a+b,0);
+  const dayLabels = ['L','M','M','J','V','S','D'];
+  const now = new Date();
+  const fmtDate = now.toLocaleDateString('fr-FR') + ' à ' + pad2(now.getHours()) + 'h' + pad2(now.getMinutes());
+
+  // Bloc lisible
+  let txt = `📋 POINTAGE CHANTIER\n`;
+  txt += `─────────────────────────\n`;
+  txt += `Chef : ${STATE.chef}\n`;
+  txt += `Chantier : ${STATE.chantier}\n`;
+  txt += `Entreprise : ${STATE.entreprise}\n`;
+  txt += `Semaine : ${STATE.weekLabel}\n`;
+  txt += `Saisi le : ${fmtDate}\n`;
+  txt += `─────────────────────────\n\n`;
+  STATE.team.forEach((m, idx) => {
+    const days = m.days.map((v,i) => dayLabels[i]+'='+(v||'·')).join(' ');
+    txt += `${m.nom}\n  ${days}\n  Total : ${totals[idx]} j\n\n`;
+  });
+  txt += `─────────────────────────\n`;
+  txt += `TOTAL ÉQUIPE : ${totalJ} j (${STATE.team.length} intérim.)\n`;
+  txt += `\n--- CSV pour facturation ---\n`;
+  txt += buildCSV();
+
+  document.getElementById('export-text').value = txt;
+  document.getElementById('export-summary').textContent =
+    `${STATE.team.length} intérim · ${totalJ} j total · ${STATE.chantier} · ${STATE.weekLabel}`;
+}
+function buildCSV(){
+  const monthIdx = (STATE.weekDates?.start?.getMonth() ?? 0) + 1;
+  const year = STATE.weekDates?.start?.getFullYear() ?? new Date().getFullYear();
+  let csv = `# pointage chef: ${STATE.chef}\n`;
+  csv += `# date saisie: ${new Date().toISOString().slice(0,16).replace('T',' ')}\n`;
+  csv += `# mois: ${year}-${pad2(monthIdx)}\n\n`;
+  csv += `# chantier: ${STATE.chantier}\n`;
+  csv += `# entreprise: ${STATE.entreprise}\n`;
+  csv += `nom;${STATE.weekISO}\n`;
+  STATE.team.forEach(m => {
+    const j = m.days.reduce((s,v)=>s+dayValueInJours(v),0);
+    csv += `${m.nom};${j}\n`;
+  });
+  return csv;
+}
+function sendWhatsApp(){
+  const txt = document.getElementById('export-text').value;
+  const url = 'https://wa.me/?text=' + encodeURIComponent(txt);
+  window.open(url, '_blank');
+}
+function sendEmail(){
+  const subject = `Pointage ${STATE.chantier} · ${STATE.weekLabel}`;
+  const body = document.getElementById('export-text').value;
+  window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+function copyText(){
+  const ta = document.getElementById('export-text');
+  ta.select();
+  try {
+    if(navigator.clipboard) navigator.clipboard.writeText(ta.value);
+    else document.execCommand('copy');
+    alert('✅ Copié dans le presse-papier.');
+  } catch(e){ alert('Sélectionne et copie manuellement.'); }
+}
+function downloadCSV(){
+  const csv = buildCSV();
+  const blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safeName = (STATE.chantier||'chantier').replace(/[^a-z0-9]+/gi,'_').toLowerCase();
+  a.download = `pointage_${safeName}_${STATE.weekISO}_${STATE.chef.toLowerCase()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function resetAll(){
+  if(!confirm('⚠️ Effacer tout (chef, chantier, équipe) et recommencer ?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  Object.assign(STATE, { chef:'', entreprise:'', chantier:'', weekISO:'', weekLabel:'', weekDates:{start:null,end:null}, team:[] });
+  document.getElementById('screen-export').classList.add('hidden');
+  document.getElementById('screen-team').classList.add('hidden');
+  document.getElementById('screen-setup').classList.remove('hidden');
+  document.getElementById('chef-nom').value = '';
+  document.getElementById('chantier-nom').value = '';
+  document.querySelectorAll('.ent-pill').forEach(b => b.classList.remove('active'));
+  document.getElementById('semaine').value = currentWeekString();
+}
+
+/* ════════ MODAL helper ════════ */
+function showPicker(html){
+  closePicker();
+  const ov = document.createElement('div');
+  ov.className = 'picker-overlay';
+  ov.id = 'picker-overlay';
+  ov.onclick = e => { if(e.target === ov) closePicker(); };
+  ov.innerHTML = `<div class="picker">${html}</div>`;
+  document.body.appendChild(ov);
+}
+function closePicker(){
+  const p = document.getElementById('picker-overlay');
+  if(p) p.remove();
+}
+
+/* ════════ INIT ════════ */
+initSetup();
+</script>
+</body>
+</html>

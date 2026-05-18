@@ -131,18 +131,10 @@ body{
 .day-input.has-value[data-kind="num1-5"]{background:var(--warn-soft);border-color:var(--warn);color:#9e6d00}
 .day-input.has-value[data-kind="num6-10"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
 .day-input.has-value[data-kind="numXL"]{
-  background: linear-gradient(135deg, #af52de 0%, #007aff 15%, #00c7be 30%, #34c759 50%, #ffcc00 70%, #ff9500 85%, #ff3b30 100%);
-  background-size: 200% 200%;
-  border: 2px solid #af52de;
+  background: #af52de;
+  border: 2px solid #8c3fbe;
   color: #fff;
   font-weight: 900;
-  text-shadow: 0 1px 2px rgba(0,0,0,.35);
-  animation: rainbow-shift 3s linear infinite;
-}
-@keyframes rainbow-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
 }
 
 /* ── Signature canvas ── */
@@ -273,7 +265,7 @@ body{
       &nbsp;&nbsp;&nbsp;<span style="background:var(--ko-soft);color:var(--ko);padding:2px 8px;border-radius:6px;font-weight:800">0</span> rouge ·
       <span style="background:var(--warn-soft);color:#9e6d00;padding:2px 8px;border-radius:6px;font-weight:800">1-5</span> jaune ·
       <span style="background:var(--ok-soft);color:var(--ok);padding:2px 8px;border-radius:6px;font-weight:800">6-10</span> vert ·
-      <span style="background:linear-gradient(135deg,#af52de,#007aff,#34c759,#ffcc00,#ff3b30);color:#fff;padding:2px 8px;border-radius:6px;font-weight:800;text-shadow:0 1px 2px rgba(0,0,0,.35)">&gt;10</span> arc-en-ciel<br>
+      <span style="background:#af52de;color:#fff;padding:2px 8px;border-radius:6px;font-weight:800">&gt;10</span> violet<br>
       • Règle paie : ≤5h = 0,5j · &gt;5h = 1j
     </div>
 

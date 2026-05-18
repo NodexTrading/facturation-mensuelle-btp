@@ -126,7 +126,24 @@ body{
 .day-input.has-value[data-kind="A"]{background:var(--ko-soft);border-color:var(--ko);color:var(--ko)}
 .day-input.has-value[data-kind="F"]{background:var(--warn-soft);border-color:var(--warn);color:#9e6d00}
 .day-input.has-value[data-kind="H"]{background:var(--primary-soft);border-color:var(--primary);color:var(--primary-dark)}
-.day-input.has-value[data-kind="num"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+/* Codes couleur progressifs selon le chiffre saisi */
+.day-input.has-value[data-kind="num0"]{background:var(--ko-soft);border-color:var(--ko);color:var(--ko)}
+.day-input.has-value[data-kind="num1-5"]{background:var(--warn-soft);border-color:var(--warn);color:#9e6d00}
+.day-input.has-value[data-kind="num6-10"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.day-input.has-value[data-kind="numXL"]{
+  background: linear-gradient(135deg, #ff3b30 0%, #ff9500 20%, #ffcc00 40%, #34c759 60%, #00c7be 75%, #007aff 90%, #af52de 100%);
+  background-size: 200% 200%;
+  border: 2px solid #af52de;
+  color: #fff;
+  font-weight: 900;
+  text-shadow: 0 1px 2px rgba(0,0,0,.35);
+  animation: rainbow-shift 3s linear infinite;
+}
+@keyframes rainbow-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 
 /* ── Signature canvas ── */
 .sig-wrap{
@@ -251,9 +268,13 @@ body{
 
     <div class="banner-warn">
       💡 Tape ce que tu veux dans chaque case :<br>
-      • <strong>P</strong> = présent (1j) · <strong>A</strong> = absent · <strong>F</strong> = férié · <strong>I</strong> = intempérie<br>
-      • Ou les <strong>heures</strong> : <code>8</code> · <code>7</code> · <code>4</code> · <code>8h30</code><br>
-      • Règle : ≤5h = 0,5j · &gt;5h = 1j
+      • Lettres : <strong>P</strong> (présent) · <strong>A</strong> (absent) · <strong>F</strong> (férié) · <strong>I</strong> (intempérie)<br>
+      • Chiffres = heures, couleur auto :<br>
+      &nbsp;&nbsp;&nbsp;<span style="background:var(--ko-soft);color:var(--ko);padding:2px 8px;border-radius:6px;font-weight:800">0</span> rouge ·
+      <span style="background:var(--warn-soft);color:#9e6d00;padding:2px 8px;border-radius:6px;font-weight:800">1-5</span> jaune ·
+      <span style="background:var(--ok-soft);color:var(--ok);padding:2px 8px;border-radius:6px;font-weight:800">6-10</span> vert ·
+      <span style="background:linear-gradient(135deg,#ff3b30,#ffcc00,#34c759,#007aff,#af52de);color:#fff;padding:2px 8px;border-radius:6px;font-weight:800;text-shadow:0 1px 2px rgba(0,0,0,.35)">&gt;10</span> arc-en-ciel<br>
+      • Règle paie : ≤5h = 0,5j · &gt;5h = 1j
     </div>
 
     <button class="add-mec" onclick="addMec()">＋ Ajouter un intérimaire</button>
@@ -517,7 +538,16 @@ function dayValueInJours(v){
   }
   return 0;
 }
-/* Détermine le code couleur de la cellule selon ce qu'a tapé le chef */
+/* Détermine le code couleur de la cellule selon ce qu'a tapé le chef.
+   Codes :
+   - P     → vert
+   - A/I   → rouge
+   - F     → jaune
+   - num0       → rouge (0 = pas bossé / problème)
+   - num1-5     → jaune (court : ≤5h, demi-journée)
+   - num6-10    → vert (journée pleine normale)
+   - numXL      → multicolore (>10, abusé/exceptionnel, à vérifier)
+   - H          → bleu (heures avec "h" comme 8h30) */
 function dayKind(v){
   if(!v) return '';
   const s = v.toString().trim().toUpperCase();
@@ -525,10 +555,16 @@ function dayKind(v){
   if(s === 'A' || s === 'AB') return 'A';
   if(s === 'F') return 'F';
   if(s === 'I') return 'A';
-  // Heures ou nombre
-  if(/^\d+([.,]\d+)?H?(\d{0,2})?$/.test(s)) {
-    if(/H/.test(s)) return 'H';
-    return 'num';
+  // Format "8h30" / "8H" / "4h" → kind H (bleu)
+  if(/^\d+H\d{0,2}$/.test(s)) return 'H';
+  // Chiffre pur (entier ou décimal)
+  const m = s.match(/^(\d+(?:[.,]\d+)?)$/);
+  if(m){
+    const n = parseFloat(m[1].replace(',', '.'));
+    if(n === 0) return 'num0';
+    if(n >= 1 && n <= 5) return 'num1-5';
+    if(n >= 6 && n <= 10) return 'num6-10';
+    if(n > 10) return 'numXL';
   }
   return '';
 }

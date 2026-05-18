@@ -616,6 +616,7 @@ body {
     <button class="btn btn-ghost" onclick="resetAll()">↺ Tout réinitialiser</button>
     <button class="btn btn-primary" onclick="window.open('https://calculateur-de-marge-ten.vercel.app/','_blank')" title="Le transfert se fait depuis le calculateur : ouvre-le, clique sur 📤 Facturation mensuelle, et l'équipe arrivera ici automatiquement">↗ Ouvrir le Calculateur de Marge</button>
     <button class="btn btn-ghost" onclick="openCarnet()" title="Voir et gérer la liste des intérimaires connus (carnet persistant)">📚 Carnet</button>
+    <button class="btn btn-ghost" onclick="openCoefsManager()" title="Modifier les coefficients par entreprise (TTF = sal_net × coef)">🏢 Coefficients</button>
     <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
     <button class="btn btn-ghost" onclick="loadTestJDSMars2026()" title="Charge le test mars 2026 (chantier JDS / LE BAIA, 9 intérimaires, 5 semaines, calcul automatique)">🧪 Charger test JDS mars 2026</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
@@ -904,27 +905,63 @@ function clearStorage(){ try{ localStorage.removeItem(STORAGE_KEY); }catch(e){} 
 const f = (n) => isFinite(n) ? n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €' : '–';
 const fInt = (n) => isFinite(n) ? n.toLocaleString('fr-FR') : '0';
 
-/* ════════ COEF CLIENT (TTF = sal_net × coef) ════════ */
-const COEF_CLIENTS = {
-  'ACTIBAT': 1.82,
-  'JDS': 1.82,
-  'JDS CONSTRUCTION': 1.82,
-  'MGB': 1.78,
-};
+/* ════════ COEF CLIENT (TTF = sal_net × coef) — persistant en localStorage ════════ */
+const COEFS_STORAGE_KEY = 'forma_coefs_v1';
 const COEF_DEFAULT = 1.82;
+const COEF_CLIENTS_DEFAULTS = {
+  'ACTIBAT': { coef: 1.82, locked: true },
+  'JDS':     { coef: 1.82, locked: true },
+  'MGB':     { coef: 1.78, locked: true },
+};
+function loadCoefs(){
+  try {
+    const raw = localStorage.getItem(COEFS_STORAGE_KEY);
+    if(!raw) return JSON.parse(JSON.stringify(COEF_CLIENTS_DEFAULTS));
+    const parsed = JSON.parse(raw);
+    if(!parsed || typeof parsed !== 'object') return JSON.parse(JSON.stringify(COEF_CLIENTS_DEFAULTS));
+    // Migration : si valeurs sont des nombres (ancien format), convertir en {coef, locked}
+    Object.keys(parsed).forEach(k => {
+      if(typeof parsed[k] === 'number') parsed[k] = { coef: parsed[k], locked: false };
+      if(!parsed[k] || typeof parsed[k].coef !== 'number') delete parsed[k];
+    });
+    return parsed;
+  } catch(e) { return JSON.parse(JSON.stringify(COEF_CLIENTS_DEFAULTS)); }
+}
+function saveCoefs(){
+  try { localStorage.setItem(COEFS_STORAGE_KEY, JSON.stringify(COEF_CLIENTS)); } catch(e) {}
+}
+let COEF_CLIENTS = loadCoefs();
+
 function coefClient(entreprise){
   const key = (entreprise||'').toString().trim().toUpperCase();
   if(!key) return COEF_DEFAULT;
-  if(COEF_CLIENTS[key] != null) return COEF_CLIENTS[key];
+  if(COEF_CLIENTS[key] && typeof COEF_CLIENTS[key].coef === 'number') return COEF_CLIENTS[key].coef;
   // Match partiel : « JDS Construction » contient « JDS », etc.
   for(const k of Object.keys(COEF_CLIENTS)){
-    if(key.indexOf(k) >= 0) return COEF_CLIENTS[k];
+    if(key.indexOf(k) >= 0 && COEF_CLIENTS[k] && typeof COEF_CLIENTS[k].coef === 'number') return COEF_CLIENTS[k].coef;
   }
   return COEF_DEFAULT;
 }
 /* TTF hebdo dérivé du salaire net + entreprise du tableau */
 function ttfHebdo(salNetHebdo, entreprise){
   return (parseFloat(salNetHebdo)||0) * coefClient(entreprise);
+}
+/* Recalcul global de tous les TTF (à appeler après modification d'un coef) */
+function recomputeAllTTF(){
+  STATE.tableaux.forEach(t => {
+    t.emps.forEach(e => { e.factureHebdo = ttfHebdo(e.salNetHebdo, t.entreprise); });
+  });
+  // Carnet : pareil, recalculer le facturé de chaque tarif selon son entreprise
+  Object.keys(CARNET).forEach(nom => {
+    const c = CARNET[nom];
+    if(c?.rates){
+      Object.keys(c.rates).forEach(ent => {
+        c.rates[ent].factureHebdo = ttfHebdo(c.rates[ent].salNetHebdo, ent);
+      });
+    }
+  });
+  saveStorage();
+  saveCarnet();
 }
 
 function getISOWeek(date){
@@ -1063,6 +1100,169 @@ function delPrime(tableauId, empId, primeId){
   saveStorage();
   render();
 }
+/* ════════ COEFS ENTREPRISE — gestion + verrouillage ════════ */
+function openCoefsManager(){
+  const entries = Object.entries(COEF_CLIENTS);
+  const rowsHtml = entries.map(([ent, data]) => {
+    const coef = (data?.coef||0).toFixed(2);
+    const locked = !!data?.locked;
+    const cellBg = locked ? 'background:var(--bg-2);cursor:not-allowed;color:var(--text-muted)' : 'background:var(--card);color:var(--text)';
+    return `<tr data-ent="${_esc(ent)}" style="border-bottom:1px solid var(--border)">
+      <td style="padding:14px 18px;font-weight:800;font-size:15px;color:var(--text);min-width:180px">${_esc(ent)}</td>
+      <td style="padding:14px 18px;text-align:center">
+        <input class="coef-input" type="number" step="0.01" min="1" max="3" value="${coef}"
+          ${locked ? 'disabled' : ''}
+          style="width:110px;padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:800;text-align:center;outline:none;${cellBg}">
+        <span style="margin-left:8px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);font-size:13px">×</span>
+      </td>
+      <td style="padding:14px 18px;text-align:center;font-family:'JetBrains Mono',monospace;color:var(--text-muted);font-size:13px">
+        ex : 1000 € net → <strong class="coef-preview" style="color:var(--accent-dark);font-weight:700">${(1000*data.coef).toFixed(0)} €</strong> TTF
+      </td>
+      <td style="padding:14px 18px;text-align:center">
+        <button class="lock-btn" onclick="toggleCoefLock('${_jsq(ent)}')"
+          title="${locked ? 'Déverrouiller pour modifier' : 'Verrouiller pour protéger'}"
+          style="padding:9px 14px;border:1.5px solid var(--border);border-radius:10px;background:${locked?'var(--ok-soft)':'var(--warn-soft)'};color:${locked?'var(--ok)':'var(--warn)'};font-size:18px;cursor:pointer;font-weight:700">
+          ${locked ? '🔒' : '🔓'}
+        </button>
+      </td>
+      <td style="padding:14px 18px;text-align:right">
+        <button onclick="if(confirm('Supprimer le coef pour « ${_jsq(ent)} » ?\\nLes tableaux qui utilisent cette entreprise reviendront au coef défaut (${COEF_DEFAULT}).')){removeCoefEntreprise('${_jsq(ent)}')}"
+          ${locked ? 'disabled' : ''}
+          style="padding:8px 12px;border:1.5px solid ${locked?'var(--border)':'rgba(232,93,93,.3)'};border-radius:10px;background:${locked?'var(--bg-2)':'var(--ko-soft)'};color:${locked?'var(--text-faint)':'var(--ko)'};font-size:16px;cursor:${locked?'not-allowed':'pointer'};font-weight:700">
+          ✕
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">
+      Les coefficients par entreprise déterminent le <strong style="color:var(--text)">TTF (Total Tarif Facturé)</strong> à partir du salaire net hebdo. Verrouille (🔒) une fois confirmé pour éviter toute modification accidentelle.
+    </p>
+
+    <div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card)">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--bg-2);font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:800">
+            <th style="padding:12px 18px;text-align:left">Entreprise</th>
+            <th style="padding:12px 18px;text-align:center;min-width:160px">Coefficient</th>
+            <th style="padding:12px 18px;text-align:center">Aperçu calcul</th>
+            <th style="padding:12px 18px;text-align:center">État</th>
+            <th style="padding:12px 18px;text-align:right;width:60px"></th>
+          </tr>
+        </thead>
+        <tbody id="coefs-tbody">${rowsHtml}</tbody>
+      </table>
+    </div>
+
+    <!-- Ajout nouvelle entreprise -->
+    <div style="margin-top:18px;padding:16px 18px;background:var(--primary-soft);border:1px dashed var(--primary);border-radius:12px">
+      <div style="font-weight:700;color:var(--primary-dark);margin-bottom:10px;font-size:13px">➕ Ajouter une entreprise</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+        <div style="flex:2;min-width:180px">
+          <label style="display:block;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Nom entreprise</label>
+          <input id="new-coef-ent" type="text" placeholder="Ex : STS SYNERGIE"
+            style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;background:var(--card);font-family:inherit;font-size:14px;color:var(--text);outline:none;text-transform:uppercase">
+        </div>
+        <div style="flex:1;min-width:120px">
+          <label style="display:block;font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Coefficient</label>
+          <input id="new-coef-val" type="number" step="0.01" min="1" max="3" placeholder="1,82"
+            style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;background:var(--card);font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text);outline:none;text-align:center;font-weight:700">
+        </div>
+        <button onclick="addCoefEntreprise()" class="btn btn-primary" style="padding:10px 18px;font-size:13px;min-height:auto">＋ Ajouter</button>
+      </div>
+    </div>
+
+    <!-- Aide -->
+    <div style="margin-top:14px;padding:14px 18px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;display:flex;gap:12px;align-items:start">
+      <span style="font-size:22px;line-height:1">💡</span>
+      <div style="flex:1">
+        <div style="font-weight:700;color:var(--text);margin-bottom:4px">Formule</div>
+        <div style="font-size:13px;color:var(--text-muted);line-height:1.5">
+          <code>TTF hebdo = salaire net hebdo × coef(entreprise)</code><br>
+          Si l'entreprise n'est pas dans la liste → coef défaut <strong>${COEF_DEFAULT.toFixed(2)}</strong>.
+          Quand tu modifies un coef, <strong>tous les TTF des tableaux et du carnet sont recalculés automatiquement</strong>.
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:10px;margin-top:18px;justify-content:space-between;flex-wrap:wrap">
+      <button onclick="resetCoefsDefaults()" class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto">↺ Réinitialiser aux valeurs par défaut</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="closeModal()">Fermer</button>
+        <button class="btn btn-primary" style="padding:10px 18px;font-size:13px;min-height:auto" onclick="saveCoefsFromModal()">💾 Enregistrer les modifications</button>
+      </div>
+    </div>`;
+  showModal('🏢 Coefficients par entreprise (TTF)', html, { size: 'lg' });
+}
+
+function toggleCoefLock(ent){
+  if(!COEF_CLIENTS[ent]) return;
+  COEF_CLIENTS[ent].locked = !COEF_CLIENTS[ent].locked;
+  saveCoefs();
+  openCoefsManager(); // re-render
+}
+
+function removeCoefEntreprise(ent){
+  if(!COEF_CLIENTS[ent]) return;
+  if(COEF_CLIENTS[ent].locked){ alert('Verrouillée — déverrouille d\'abord.'); return; }
+  delete COEF_CLIENTS[ent];
+  saveCoefs();
+  recomputeAllTTF();
+  render();
+  openCoefsManager();
+}
+
+function addCoefEntreprise(){
+  const entInput = document.getElementById('new-coef-ent');
+  const valInput = document.getElementById('new-coef-val');
+  const ent = _entKey(entInput?.value);
+  const val = parseFloat(valInput?.value)||0;
+  if(ent === '?' || !ent){ alert('Saisis un nom d\'entreprise.'); return; }
+  if(val <= 1 || val > 3){ alert('Coefficient doit être entre 1.00 et 3.00.'); return; }
+  COEF_CLIENTS[ent] = { coef: val, locked: false };
+  saveCoefs();
+  recomputeAllTTF();
+  render();
+  openCoefsManager();
+}
+
+function resetCoefsDefaults(){
+  if(!confirm('Réinitialiser tous les coefficients aux valeurs par défaut ?\n\nACTIBAT × 1,82\nJDS × 1,82\nMGB × 1,78\n\nLes entreprises personnalisées seront supprimées. Les TTF seront recalculés.')) return;
+  COEF_CLIENTS = JSON.parse(JSON.stringify(COEF_CLIENTS_DEFAULTS));
+  saveCoefs();
+  recomputeAllTTF();
+  render();
+  openCoefsManager();
+}
+
+function saveCoefsFromModal(){
+  // Récupère les valeurs des champs non-verrouillés
+  const rows = document.querySelectorAll('#coefs-tbody tr');
+  let changed = 0;
+  rows.forEach(row => {
+    const ent = row.dataset.ent;
+    const input = row.querySelector('.coef-input');
+    if(!ent || !input || input.disabled) return;
+    const newCoef = parseFloat(input.value)||0;
+    if(newCoef <= 1 || newCoef > 3) return;
+    if(Math.abs((COEF_CLIENTS[ent]?.coef||0) - newCoef) > 0.001){
+      COEF_CLIENTS[ent].coef = newCoef;
+      changed++;
+    }
+  });
+  if(changed > 0){
+    saveCoefs();
+    recomputeAllTTF();
+    render();
+    alert(`✅ ${changed} coefficient${changed>1?'s':''} mis à jour.\nTous les TTF ont été recalculés.`);
+  } else {
+    alert('Aucune modification.');
+  }
+  closeModal();
+}
+
 /* ════════ DÉTAIL PAIE HEBDO — 1 mec (mode XL paysage) ════════ */
 function openPaieDetail(tableauId, empId){
   const t = getTableau(tableauId); if(!t) return;
@@ -1890,7 +2090,7 @@ function saveCarnetEdit(nom){
   openCarnet();
 }
 function openCarnetBulkAdd(){
-  const coefLines = Object.entries(COEF_CLIENTS).map(([k,v]) => `<code>${k}</code> ×${v.toFixed(2).replace('.',',')}`).join(' · ');
+  const coefLines = Object.entries(COEF_CLIENTS).map(([k,v]) => `<code>${k}</code> ×${(v.coef||0).toFixed(2).replace('.',',')}`).join(' · ');
   const html = `
     <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
       Colle <strong>une ligne par intérimaire</strong>, au format :

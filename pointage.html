@@ -352,6 +352,12 @@ const STATE = {
 };
 const STORAGE_KEY = 'forma_pointage_v1';
 
+/* ════════ ENVOI EMAIL — Cloudflare Worker + Resend (même worker que Code Sécurité) ════════ */
+const MAIL_CONFIG = {
+  WORKER_URL: 'https://codesec-mail.nzamouri08.workers.dev/',
+  RECIPIENT: 'toulon@forma-interim.fr',
+};
+
 /* ════════ UTILS ════════ */
 function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtDM(d){ return pad2(d.getDate())+'/'+pad2(d.getMonth()+1); }
@@ -926,27 +932,74 @@ function buildPDFBlob(){
   return doc.output('blob');
 }
 
-function generateAndShare(){
+async function generateAndShare(){
   if(!SIG?.hasContent){ alert('Tu dois signer avant de générer le PDF.'); return; }
   if(STATE.team.length === 0){ alert('Ajoute au moins un intérimaire.'); return; }
   const blob = buildPDFBlob();
   if(!blob) return;
   const safeName = `pointage_${(STATE.chantier||'chantier').replace(/[^a-z0-9]+/gi,'_').toLowerCase()}_${STATE.weekISO}_${STATE.chef.toLowerCase()}.pdf`;
-  const file = new File([blob], safeName, { type: 'application/pdf' });
 
-  // Tente Web Share API (mobile : WhatsApp, Email, etc.)
-  if(navigator.canShare && navigator.canShare({ files: [file] })){
-    const txt = `Pointage ${STATE.chantier} · ${STATE.weekLabel} · ${STATE.chef}`;
-    navigator.share({ files: [file], title: txt, text: txt })
-      .catch(err => {
-        if(err?.name !== 'AbortError') downloadPDF(blob, safeName);
-      });
-  } else {
-    // Fallback : téléchargement direct
-    downloadPDF(blob, safeName);
-    alert('PDF téléchargé. Tu peux maintenant le partager via WhatsApp / Email depuis ton dossier Téléchargements.');
+  // 1) ENVOI EMAIL AUTOMATIQUE en arrière-plan (vers le compte Forma)
+  const sendBtn = document.querySelector('[onclick="generateAndShare()"]');
+  if(sendBtn){
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '⏳ Envoi en cours…';
   }
+  let emailOK = false, emailError = null;
+  try {
+    await sendPointageMail(blob, safeName);
+    emailOK = true;
+  } catch(err){
+    emailError = err?.message || 'Erreur inconnue';
+    console.error('Email send failed:', err);
+  }
+
+  // 2) Propose aussi le partage natif (WhatsApp/Email perso/etc.)
+  const file = new File([blob], safeName, { type: 'application/pdf' });
+  const summary = `Pointage ${STATE.chantier} · ${STATE.weekLabel} · ${STATE.chef}`;
+  let sharedNatively = false;
+  if(navigator.canShare && navigator.canShare({ files: [file] })){
+    try {
+      await navigator.share({ files: [file], title: summary, text: summary });
+      sharedNatively = true;
+    } catch(err){ /* user a annulé : ok */ }
+  } else {
+    downloadPDF(blob, safeName);
+  }
+
+  if(sendBtn){
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '📄 Générer PDF signé & envoyer';
+  }
+
+  // 3) Feedback à l'utilisateur
+  let msg = '';
+  if(emailOK){
+    msg += `✅ Email automatique envoyé à ${MAIL_CONFIG.RECIPIENT}.\n`;
+  } else {
+    msg += `⚠️ Email automatique échoué : ${emailError}\n   → Le PDF a été ${sharedNatively?'partagé':'téléchargé'} en secours.\n`;
+  }
+  if(sharedNatively) msg += `📤 PDF aussi envoyé via le partage.`;
+  alert(msg);
 }
+
+/* Envoi via Cloudflare Worker (même worker que Code Sécurité, accepte FormData {to, subject, message, pdf}) */
+async function sendPointageMail(blob, filename){
+  const fd = new FormData();
+  fd.append('to', MAIL_CONFIG.RECIPIENT);
+  fd.append('subject', `Pointage ${STATE.chantier} · ${STATE.entreprise} · ${STATE.weekLabel} · ${STATE.chef}`);
+  const totals = STATE.team.map(m => m.days.reduce((s,v)=>s+dayValueInJours(v),0));
+  const totalJ = totals.reduce((a,b)=>a+b,0);
+  const body = `Pointage signé par ${STATE.chef} reçu pour ${STATE.chantier} (${STATE.entreprise}), semaine ${STATE.weekLabel}.\n\n${STATE.team.length} intérimaires · ${totalJ} jours travaillés au total.\n\nPDF en pièce jointe.`;
+  fd.append('message', body);
+  fd.append('pdf', blob, filename);
+  const res = await fetch(MAIL_CONFIG.WORKER_URL, { method: 'POST', body: fd });
+  let data;
+  try { data = await res.json(); } catch(e){ throw new Error('Réponse serveur invalide'); }
+  if(!data.success) throw new Error(data.error || 'Envoi échoué');
+  return true;
+}
+
 function downloadPDF(blob, name){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

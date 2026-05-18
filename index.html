@@ -1058,7 +1058,10 @@ function setEmpField(tableauId, empId, field, value){
 function setEmpJours(tableauId, empId, week, value){
   const t = getTableau(tableauId); if(!t) return;
   const e = t.emps.find(x=>x.id===empId); if(!e) return;
-  const v = Math.max(0, Math.min(7, parseInt(value)||0));
+  // Accepte décimales avec point OU virgule (ex: 2.5, 2,5, 0.75…) — borné [0, 7]
+  const raw = (value||'').toString().replace(',', '.');
+  const parsed = parseFloat(raw);
+  const v = isNaN(parsed) ? 0 : Math.max(0, Math.min(7, Math.round(parsed * 100) / 100));
   e.jours[week] = v;
   saveStorage();
   render();
@@ -1273,7 +1276,7 @@ function openPaieDetail(tableauId, empId){
   // Calcul cellules par semaine
   let totJ = 0, totSal = 0;
   const cells = weeks.map(w => {
-    const j = parseInt(e.jours[w]||0, 10);
+    const j = parseFloat(e.jours[w]||0) || 0;
     const eur = j * tjNet;
     totJ += j; totSal += eur;
     return { w, j, eur };
@@ -1401,7 +1404,7 @@ function openPaieRecapTableau(tableauId){
     const tjNet = (parseFloat(e.salNetHebdo)||0) / 5;
     let mecTot = 0, totJ = 0;
     const cells = weeks.map(w => {
-      const j = parseInt(e.jours[w]||0, 10);
+      const j = parseFloat(e.jours[w]||0) || 0;
       const eur = j * tjNet;
       mecTot += eur;
       totJ += j;
@@ -1586,7 +1589,7 @@ function renderEmpTableHTML(t, weeks){
       <td class="right">${f(tjNet)}</td>
       <td class="right" style="color:var(--accent-dark);font-weight:600">${f(tjFac)}</td>`;
     weeks.forEach(w => {
-      body += `<td class="center"><input class="t-input day" value="${e.jours[w]||0}" oninput="setEmpJours(${t.id},${e.id},${w},this.value)"></td>`;
+      body += `<td class="center"><input class="t-input day" inputmode="decimal" value="${e.jours[w]||0}" oninput="setEmpJours(${t.id},${e.id},${w},this.value)" title="Accepte décimales : 5, 2.5, 0.75…"></td>`;
     });
     body += `<td class="center" style="font-weight:700">${totJr}</td>
       <td class="right salaire">${f(salJ + primSal)}</td>
@@ -2585,32 +2588,33 @@ function _importPresenceCSVBlock(text, silent){
     } else {
       matched++;
     }
-    // Pour chaque semaine : accepte (1) un nombre direct (ex: "5"), (2) un code P/A (ex: "PPPPA"), (3) un nombre d'heures avec h (ex: "39h45" → /8 arrondi)
+    // Pour chaque semaine : accepte (1) un nombre direct (ex: "5"), (2) décimale (ex: "2.5"), (3) un nombre d'heures avec h (ex: "39h45"), (4) un code P/A
     weekCols.forEach(({col, week}) => {
       const raw = (cols[col]||'').trim();
       if(!raw || raw === '-') return;
       const code = raw.toUpperCase().replace(/\s+/g,'');
+      const _clamp = v => Math.max(0, Math.min(7, Math.round(v*100)/100));
 
       // Cas 1 : valeur numérique entière directe (ex: "5", "0", "2")
       if(/^\d+$/.test(code)){
-        emp.jours[week] = Math.max(0, Math.min(7, parseInt(code, 10)));
+        emp.jours[week] = _clamp(parseInt(code, 10));
         return;
       }
-      // Cas 2 : valeur décimale (ex: "4.5") → arrondi
+      // Cas 2 : valeur décimale (ex: "4.5", "2,5", "0.75") — préserve les décimales
       if(/^\d+[.,]\d+$/.test(code)){
-        emp.jours[week] = Math.max(0, Math.min(7, Math.round(parseFloat(code.replace(',','.')))));
+        emp.jours[week] = _clamp(parseFloat(code.replace(',','.')));
         return;
       }
-      // Cas 3 : nombre d'heures (ex: "39h", "39h45", "39H30") → ÷8h, arrondi à l'entier
+      // Cas 3 : nombre d'heures (ex: "39h", "39h45", "39H30") → ÷8h, arrondi au 0,25 près
       const mh = code.match(/^(\d+)H(\d{0,2})?$/);
       if(mh){
         const hours = parseInt(mh[1],10) + (parseInt(mh[2]||'0',10)/60);
-        emp.jours[week] = Math.max(0, Math.min(7, Math.round(hours/8)));
+        emp.jours[week] = _clamp(Math.round(hours/8 * 4) / 4); // 0,25 j près
         return;
       }
       // Cas 4 (par défaut) : code P/A → compte les P
       const nbP = (code.match(/P/g) || []).length;
-      emp.jours[week] = Math.max(0, Math.min(7, nbP));
+      emp.jours[week] = _clamp(nbP);
     });
   }
 

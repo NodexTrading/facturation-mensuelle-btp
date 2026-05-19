@@ -201,8 +201,12 @@ body{
 .t-day-btn:hover{filter:brightness(.96)}
 .t-day-btn:active{transform:scale(.92)}
 .t-day-btn.d-empty{color:var(--text-faint);background:var(--card)}
-.t-day-btn.d-1{background:var(--ok);border-color:var(--ok);color:#fff}
-.t-day-btn.d-half{background:var(--warn);border-color:var(--warn);color:#fff}
+.t-day-btn.d-full{background:#1ea861;border-color:#1ea861;color:#fff}
+.t-day-btn.d-4{background:var(--ok);border-color:var(--ok);color:#fff}
+.t-day-btn.d-3{background:#5cc095;border-color:#5cc095;color:#fff}
+.t-day-btn.d-2{background:#f0a04b;border-color:#f0a04b;color:#fff}
+.t-day-btn.d-1{background:var(--warn);border-color:var(--warn);color:#fff}
+.t-day-btn.d-half{background:#ffd166;border-color:#ffb627;color:#7a4e00}
 .t-day-btn.d-0{background:var(--ko-soft);border-color:var(--ko);color:var(--ko)}
 .t-day-btn.d-other{background:#af52de;border-color:#8c3fbe;color:#fff}
 
@@ -531,8 +535,12 @@ body {
 .t-day-btn:hover { filter: brightness(.96); }
 .t-day-btn:active { transform: scale(.92); }
 .t-day-btn.d-empty { color: var(--text3); background: var(--card); }
-.t-day-btn.d-1 { background: var(--ok); border-color: var(--ok); color: #fff; }
-.t-day-btn.d-half { background: var(--warn); border-color: var(--warn); color: #fff; }
+.t-day-btn.d-full { background: #1ea861; border-color: #1ea861; color: #fff; }
+.t-day-btn.d-4 { background: var(--ok); border-color: var(--ok); color: #fff; }
+.t-day-btn.d-3 { background: #5cc095; border-color: #5cc095; color: #fff; }
+.t-day-btn.d-2 { background: #f0a04b; border-color: #f0a04b; color: #fff; }
+.t-day-btn.d-1 { background: var(--warn); border-color: var(--warn); color: #fff; }
+.t-day-btn.d-half { background: #ffd166; border-color: #ffb627; color: #7a4e00; }
 .t-day-btn.d-0 { background: var(--ko-soft); border-color: var(--ko); color: var(--ko); }
 .t-day-btn.d-other { background: #af52de; border-color: #8c3fbe; color: #fff; }
 
@@ -1084,16 +1092,21 @@ function setEmpField(tableauId, empId, field, value){
   saveStorage();
   render();
 }
-/* Click cyclique sur cellule jour : vide → 1 → 0,5 → 0 → vide */
+/* Click cyclique sur cellule jour : 1 clic = 5j (semaine pleine), puis décrément.
+   Cycle complet : vide → 5 → 4 → 3 → 2 → 1 → 0,5 → 0 → vide */
 function cycleDayValue(tableauId, empId, week){
   const t = getTableau(tableauId); if(!t) return;
   const e = t.emps.find(x=>x.id===empId); if(!e) return;
   const cur = e.jours[week];
+  const seq = [5, 4, 3, 2, 1, 0.5, 0]; // décrément après 1ᵉʳ clic
   let next;
-  if(cur === undefined || cur === null || cur === '') next = 1;
-  else if(cur === 1) next = 0.5;
-  else if(cur === 0.5) next = 0;
-  else next = ''; // 0 → vide
+  if(cur === undefined || cur === null || cur === '') next = 5; // vide → 5 (semaine pleine)
+  else {
+    const idx = seq.indexOf(cur);
+    if(idx === -1) next = 5; // valeur exotique → on reset à 5
+    else if(idx === seq.length - 1) next = ''; // 0 → vide
+    else next = seq[idx + 1];
+  }
   if(next === '') delete e.jours[week];
   else e.jours[week] = next;
   saveStorage();
@@ -1655,7 +1668,11 @@ function renderEmpTableHTML(t, weeks){
       const j = isEmpty ? null : (parseFloat(raw) || 0);
       let dayClass, dayLabel;
       if(isEmpty){ dayClass = 'd-empty'; dayLabel = '·'; }
-      else if(j === 1){ dayClass = 'd-1';    dayLabel = '1'; }
+      else if(j === 5){ dayClass = 'd-full';  dayLabel = '5'; }
+      else if(j === 4){ dayClass = 'd-4';     dayLabel = '4'; }
+      else if(j === 3){ dayClass = 'd-3';     dayLabel = '3'; }
+      else if(j === 2){ dayClass = 'd-2';     dayLabel = '2'; }
+      else if(j === 1){ dayClass = 'd-1';     dayLabel = '1'; }
       else if(j === 0.5){ dayClass = 'd-half'; dayLabel = '½'; }
       else if(j === 0){ dayClass = 'd-0';     dayLabel = '0'; }
       else { dayClass = 'd-other'; dayLabel = String(j).replace('.',','); }
@@ -1663,7 +1680,7 @@ function renderEmpTableHTML(t, weeks){
         <button class="t-day-btn ${dayClass}" onclick="cycleDayValue(${t.id},${e.id},${w})"
           oncontextmenu="event.preventDefault();openDayEditor(${t.id},${e.id},${w});return false"
           ondblclick="openDayEditor(${t.id},${e.id},${w})"
-          title="Clic : cycle · → 1 → ½ → 0 · Double-clic ou clic droit : saisie libre">${dayLabel}</button>
+          title="Clic : · → 5 → 4 → 3 → 2 → 1 → ½ → 0 · Double-clic : saisie libre">${dayLabel}</button>
       </td>`;
     });
     body += `<td class="center" style="font-weight:700">${totJr}</td>

@@ -1663,12 +1663,12 @@ function renderEmpTableHTML(t, weeks){
   <div class="t-wrap"><table class="t"><thead><tr>
     <th>Nom / Prénom</th>
     <th class="right">Sal. net hebdo</th>
-    ${showFrais ? '<th class="right" style="color:var(--accent-dark)">Frais</th>' : ''}
     <th class="right">€/J net</th>
     <th class="right">€/J fact. ${coefLabel}</th>`;
   weeks.forEach(w => head += `<th class="week">S${w}</th>`);
   head += `<th class="center">Total/JR</th>
     <th class="salaire">SALAIRE</th>
+    ${showFrais ? '<th class="right" style="color:var(--accent-dark)">FRAIS</th>' : ''}
     <th class="facture">FACTURE</th>
     <th></th>
   </tr></thead><tbody>`;
@@ -1693,7 +1693,6 @@ function renderEmpTableHTML(t, weeks){
     body += `<tr>
       <td><input class="t-input name" list="carnet-datalist" value="${_esc(e.nom)}" placeholder="Nom Prénom" onchange="setEmpField(${t.id},${e.id},'nom',this.value)"></td>
       <td class="right"><input class="t-input eur" inputmode="decimal" value="${e.salNetHebdo}" onchange="setEmpField(${t.id},${e.id},'salNetHebdo',this.value)"></td>
-      ${fraisCell}
       <td class="right">${f(tjNet)}</td>
       <td class="right" style="color:var(--accent-dark);font-weight:600">${f(tjFac)}</td>`;
     weeks.forEach(w => {
@@ -1721,6 +1720,7 @@ function renderEmpTableHTML(t, weeks){
     });
     body += `<td class="center" style="font-weight:700">${totJr}</td>
       <td class="right salaire">${f(salJ + primSal)}</td>
+      ${fraisCell}
       <td class="right facture">${f(facJ + primFac)}</td>
       <td style="white-space:nowrap">
         <button class="btn-icon" onclick="openPaieDetail(${t.id},${e.id})" title="Détail paie hebdo (combien donner par semaine)" style="color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,transparent);background:var(--ok-soft);margin-right:3px">💰</button>
@@ -1731,21 +1731,20 @@ function renderEmpTableHTML(t, weeks){
     // Lignes primes
     primes.forEach(p => {
       body += `<tr style="background:rgba(243,150,39,.08)">
-        <td colspan="${4+weeks.length+(showFrais?1:0)}" style="padding-left:50px;font-style:italic;color:var(--accent-dark);font-family:'Instrument Sans',sans-serif">↳ Prime : ${_esc(p.label)} ${p.refacture?'<span style="font-size:10px;background:var(--accent);color:white;padding:1px 6px;border-radius:4px;margin-left:6px">refacturée</span>':'<span style="font-size:10px;color:var(--text-muted);margin-left:6px">(non refacturée)</span>'}</td>
+        <td colspan="${4+weeks.length}" style="padding-left:50px;font-style:italic;color:var(--accent-dark);font-family:'Instrument Sans',sans-serif">↳ Prime : ${_esc(p.label)} ${p.refacture?'<span style="font-size:10px;background:var(--accent);color:white;padding:1px 6px;border-radius:4px;margin-left:6px">refacturée</span>':'<span style="font-size:10px;color:var(--text-muted);margin-left:6px">(non refacturée)</span>'}</td>
         <td class="center" style="font-style:italic;color:var(--accent-dark)">—</td>
         <td class="right" style="color:var(--accent-dark)">+${f(p.montant)}</td>
+        ${showFrais ? '<td class="right" style="color:var(--text-faint)">—</td>' : ''}
         <td class="right" style="color:var(--accent-dark)">${p.refacture?'+'+f(p.montant):'—'}</td>
         <td><button class="btn-icon" onclick="delPrime(${t.id},${e.id},${p.id})" title="Supprimer prime">✕</button></td>
       </tr>`;
     });
   });
-  const fraisTotLabel = showFrais && tFrais > 0
-    ? ` · <span style="color:var(--accent-dark);font-weight:700">+ ${f(tFrais)} frais</span>`
-    : '';
   body += `<tr class="t-row-tot">
-    <td colspan="${4+weeks.length+(showFrais?1:0)}">TOTAL — ${t.emps.length} intérimaire${t.emps.length>1?'s':''}${fraisTotLabel}</td>
+    <td colspan="${4+weeks.length}">TOTAL — ${t.emps.length} intérimaire${t.emps.length>1?'s':''}</td>
     <td class="center">${tJr}</td>
     <td class="right">${f(tSal)}</td>
+    ${showFrais ? `<td class="right" style="color:var(--accent-dark);background:var(--accent-soft)">${f(tFrais)}</td>` : ''}
     <td class="right">${f(tFac)}</td>
     <td></td>
   </tr></tbody></table></div>`;

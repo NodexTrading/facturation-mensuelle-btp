@@ -1412,28 +1412,19 @@ function openPaieDetail(tableauId, empId){
     </td>`;
   }).join('');
 
-  // Ligne primes + frais (si applicable)
+  // Ligne primes uniquement (les frais sont inclus dans le grandTotal mais non détaillés)
   let primesBlock = '';
-  let extraLines = '';
   if(primes.length){
-    extraLines += primes.map(p => {
+    const primeLines = primes.map(p => {
       const m = parseFloat(p.montant)||0;
       return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px">
         <span style="color:var(--text)">↳ Prime : ${_esc(p.label)}${p.refacture?' <span style=\"font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px\">refacturée</span>':''}</span>
         <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent-dark)">+${m.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span>
       </div>`;
     }).join('');
-  }
-  if(empFrais > 0){
-    extraLines += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px">
-      <span style="color:var(--text)">↳ Frais <span style="font-size:10px;background:var(--text-muted);color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px">privé · pas facturé</span></span>
-      <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent-dark)">+${empFrais.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span>
-    </div>`;
-  }
-  if(extraLines){
     primesBlock = `<div style="margin-top:14px;padding:14px 18px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px">
-      <div style="font-size:11px;font-weight:800;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">+ En plus du salaire de base</div>
-      ${extraLines}
+      <div style="font-size:11px;font-weight:800;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">+ Primes ponctuelles</div>
+      ${primeLines}
     </div>`;
   }
 
@@ -1548,7 +1539,6 @@ function openPaieRecapTableau(tableauId){
         ${_esc(d.e.nom||'(sans nom)')}
         <div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-weight:500">${d.tjNet.toLocaleString('fr-FR',{maximumFractionDigits:0})} €/j net · ${d.totJ} j</div>
         ${d.primSal>0?'<div style="font-size:11px;color:var(--accent-dark);font-weight:600;margin-top:2px">+ primes : '+d.primSal.toLocaleString('fr-FR')+' €</div>':''}
-        ${d.frais>0?'<div style="font-size:11px;color:var(--accent-dark);font-weight:600;margin-top:2px">+ frais : '+d.frais.toLocaleString('fr-FR')+' €</div>':''}
       </td>
       ${cellsHtml}
       <td style="padding:14px 18px;text-align:right;border-left:2px solid var(--ok);font-family:'JetBrains Mono',monospace;font-weight:900;color:var(--ok);font-size:20px;background:var(--ok-soft)">

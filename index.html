@@ -1384,7 +1384,8 @@ function openPaieDetail(tableauId, empId){
   // Primes (cumulées)
   const primes = e.primes || [];
   const totPrim = primes.reduce((s,p) => s + (parseFloat(p.montant)||0), 0);
-  const grandTotal = totSal + totPrim;
+  const empFrais = parseFloat(e.frais)||0;
+  const grandTotal = totSal + totPrim + empFrais;
 
   // En-tête semaines avec dates
   const headWeeks = cells.map(c => {
@@ -1411,19 +1412,28 @@ function openPaieDetail(tableauId, empId){
     </td>`;
   }).join('');
 
-  // Ligne primes (si applicable)
+  // Ligne primes + frais (si applicable)
   let primesBlock = '';
+  let extraLines = '';
   if(primes.length){
-    const primeLines = primes.map(p => {
+    extraLines += primes.map(p => {
       const m = parseFloat(p.montant)||0;
       return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px">
-        <span style="color:var(--text)">↳ ${_esc(p.label)}${p.refacture?' <span style=\"font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px\">refacturée</span>':''}</span>
+        <span style="color:var(--text)">↳ Prime : ${_esc(p.label)}${p.refacture?' <span style=\"font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px\">refacturée</span>':''}</span>
         <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent-dark)">+${m.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span>
       </div>`;
     }).join('');
+  }
+  if(empFrais > 0){
+    extraLines += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px">
+      <span style="color:var(--text)">↳ Frais <span style="font-size:10px;background:var(--text-muted);color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px">privé · pas facturé</span></span>
+      <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent-dark)">+${empFrais.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span>
+    </div>`;
+  }
+  if(extraLines){
     primesBlock = `<div style="margin-top:14px;padding:14px 18px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px">
-      <div style="font-size:11px;font-weight:800;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">+ Primes ponctuelles</div>
-      ${primeLines}
+      <div style="font-size:11px;font-weight:800;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">+ En plus du salaire de base</div>
+      ${extraLines}
     </div>`;
   }
 
@@ -1511,10 +1521,11 @@ function openPaieRecapTableau(tableauId){
       return { j, eur };
     });
     const primSal = (e.primes||[]).reduce((s,p) => s + (parseFloat(p.montant)||0), 0);
-    mecTot += primSal;
+    const frais = parseFloat(e.frais)||0;
+    mecTot += primSal + frais;
     bigTot += mecTot;
     bigJ += totJ;
-    return { e, tjNet, cells, primSal, mecTot, totJ };
+    return { e, tjNet, cells, primSal, frais, mecTot, totJ };
   });
 
   // Construit les lignes : grandes cellules, couleurs claires, écriture lisible
@@ -1537,6 +1548,7 @@ function openPaieRecapTableau(tableauId){
         ${_esc(d.e.nom||'(sans nom)')}
         <div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-weight:500">${d.tjNet.toLocaleString('fr-FR',{maximumFractionDigits:0})} €/j net · ${d.totJ} j</div>
         ${d.primSal>0?'<div style="font-size:11px;color:var(--accent-dark);font-weight:600;margin-top:2px">+ primes : '+d.primSal.toLocaleString('fr-FR')+' €</div>':''}
+        ${d.frais>0?'<div style="font-size:11px;color:var(--accent-dark);font-weight:600;margin-top:2px">+ frais : '+d.frais.toLocaleString('fr-FR')+' €</div>':''}
       </td>
       ${cellsHtml}
       <td style="padding:14px 18px;text-align:right;border-left:2px solid var(--ok);font-family:'JetBrains Mono',monospace;font-weight:900;color:var(--ok);font-size:20px;background:var(--ok-soft)">
@@ -1676,16 +1688,19 @@ function renderEmpTableHTML(t, weeks){
   let body='';
   let tSal=0, tFac=0, tJr=0, tFrais=0;
   t.emps.forEach(e => {
-    tFrais += parseFloat(e.frais)||0;
+    const empFrais = parseFloat(e.frais)||0;
+    tFrais += empFrais;
     const ttf = ttfHebdo(e.salNetHebdo, t.entreprise);
     const tjNet = e.salNetHebdo / 5, tjFac = ttf / 5;
     let totJr = 0;
-    weeks.forEach(w => totJr += (e.jours[w]||0));
+    weeks.forEach(w => totJr += (parseFloat(e.jours[w])||0));
     const salJ = totJr * tjNet, facJ = totJr * tjFac;
     const primes = e.primes || [];
     const primSal = primes.reduce((s,p)=>s+(parseFloat(p.montant)||0), 0);
     const primFac = primes.reduce((s,p)=>s+(p.refacture?(parseFloat(p.montant)||0):0), 0);
-    tJr += totJr; tSal += salJ + primSal; tFac += facJ + primFac;
+    // SALAIRE total à donner au mec = jours×€/J + primes + frais (frais NON facturé au client)
+    const empSalTotal = salJ + primSal + empFrais;
+    tJr += totJr; tSal += empSalTotal; tFac += facJ + primFac;
 
     const fraisCell = showFrais
       ? `<td class="right"><input class="t-input eur" inputmode="decimal" value="${e.frais||0}" onchange="setEmpField(${t.id},${e.id},'frais',this.value)" style="color:var(--accent-dark);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 30%,transparent)" title="Frais personnels (pas dans la facture client)"></td>`
@@ -1719,7 +1734,7 @@ function renderEmpTableHTML(t, weeks){
       </td>`;
     });
     body += `<td class="center" style="font-weight:700">${totJr}</td>
-      <td class="right salaire">${f(salJ + primSal)}</td>
+      <td class="right salaire">${f(empSalTotal)}</td>
       ${fraisCell}
       <td class="right facture">${f(facJ + primFac)}</td>
       <td style="white-space:nowrap">
@@ -1791,9 +1806,10 @@ function renderTableau(t, weeks){
   // Calcul des sous-totaux
   let tSal=0, tFac=0, tJr=0;
   t.emps.forEach(e => {
-    let j = 0; weeks.forEach(w => j += (e.jours[w]||0));
+    let j = 0; weeks.forEach(w => j += (parseFloat(e.jours[w])||0));
     tJr += j;
     tSal += j * (e.salNetHebdo/5);
+    tSal += parseFloat(e.frais)||0; // frais → ajoutés au salaire (acompte total), pas à la facture
     tFac += j * (e.factureHebdo/5);
     (e.primes||[]).forEach(p => {
       tSal += parseFloat(p.montant)||0;
@@ -1855,9 +1871,10 @@ function computeGlobalTotals(){
     t.emps.forEach(e => {
       const nomKey = (e.nom||'').trim().toLowerCase();
       if(nomKey) empSet.add(nomKey);
-      let j = 0; weeks.forEach(w => j += (e.jours[w]||0));
+      let j = 0; weeks.forEach(w => j += (parseFloat(e.jours[w])||0));
       tJr += j;
       tSal += j * (e.salNetHebdo/5);
+      tSal += parseFloat(e.frais)||0; // frais → salaire (acompte)
       tFac += j * (e.factureHebdo/5);
       (e.primes||[]).forEach(p => {
         const m = parseFloat(p.montant)||0;

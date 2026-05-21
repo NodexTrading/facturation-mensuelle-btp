@@ -2641,6 +2641,9 @@ function _importPresenceCSVBlock(text, silent){
     if(!silent) alert('Aucune colonne semaine trouvée (attendu : S14, S15, …).');
     return null;
   }
+  // Colonne optionnelle "ferie" = nb de jours fériés TRAVAILLÉS → prime 50€/jour, NON facturée
+  const FERIE_PRIME = 50;
+  const ferieCol = header.findIndex(h => h.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z]/g,'') === 'ferie');
 
   // Bascule automatique sur le bon mois selon les en-têtes méta OU les semaines du CSV
   let switchedTo = null;
@@ -2753,6 +2756,18 @@ function _importPresenceCSVBlock(text, silent){
       const nbP = (code.match(/P/g) || []).length;
       emp.jours[week] = _clamp(nbP);
     });
+    // Prime férié : nb de jours fériés travaillés × 50€, ajoutée au SALAIRE mais NON facturée
+    if(ferieCol >= 0){
+      const nbFerie = parseInt((cols[ferieCol]||'').replace(/[^0-9]/g,''), 10);
+      if(nbFerie > 0){
+        const montant = FERIE_PRIME * nbFerie;
+        emp.primes = emp.primes || [];
+        const label = nbFerie > 1 ? `Férié (${nbFerie}j)` : 'Férié';
+        if(!emp.primes.some(p => (p.label||'').startsWith('Férié'))){
+          emp.primes.push({ id: STATE.primeIdCtr++, label, montant, refacture: false });
+        }
+      }
+    }
   }
 
   saveStorage();

@@ -212,7 +212,7 @@ body{
 
 /* Input texte coloré pour les cellules jour (saisie libre) */
 .t-day-input{
-  width:48px;height:42px;border:2px solid var(--border);border-radius:10px;
+  width:40px;height:38px;border:2px solid var(--border);border-radius:9px;
   background:var(--card);font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:800;
   text-align:center;outline:none;transition:background .15s, border-color .15s;
   padding:0;margin:0;color:var(--text);
@@ -355,7 +355,7 @@ body {
 [data-theme="dark"] .theme-toggle .moon { display: none; } [data-theme="dark"] .theme-toggle .sun { display: block; }
 
 /* App container */
-.app { max-width: 1380px; margin: 0 auto; padding: 32px 24px 96px; animation: fadeUp .5s var(--ease-out); }
+.app { max-width: min(1920px, 95vw); margin: 0 auto; padding: 32px 16px 96px; animation: fadeUp .5s var(--ease-out); }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Brand hero */
@@ -501,7 +501,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .t thead th {
-  text-align: left; padding: 11px 10px;
+  text-align: left; padding: 9px 7px;
   font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--ink-3) !important;
@@ -510,19 +510,19 @@ body {
   white-space: nowrap;
   font-family: 'Instrument Sans', sans-serif !important;
 }
-.t thead th:first-child { padding-left: 24px; }
-.t thead th:last-child { padding-right: 24px; }
+.t thead th:first-child { padding-left: 14px; }
+.t thead th:last-child { padding-right: 14px; }
 .t thead th.right { text-align: right; }
 .t thead th.center { text-align: center; }
 .t thead th.week { color: var(--forma-blue-dark) !important; text-align: center; }
 .t thead th.salaire { color: var(--ink) !important; text-align: right; }
 .t thead th.facture { color: var(--forma-orange-dark) !important; text-align: right; }
 .t tbody td {
-  padding: 12px 10px; border-bottom: 1px solid var(--line);
+  padding: 9px 7px; border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
-.t tbody td:first-child { padding-left: 24px; }
-.t tbody td:last-child { padding-right: 24px; }
+.t tbody td:first-child { padding-left: 14px; }
+.t tbody td:last-child { padding-right: 14px; }
 .t tbody td.right { text-align: right; font-weight: 700; }
 .t tbody td.center { text-align: center; }
 .t tbody td.salaire { color: var(--ink); font-weight: 700; }
@@ -532,7 +532,7 @@ body {
 .t tbody td:nth-child(2) { font-family: 'Instrument Sans', sans-serif; font-weight: 600; color: var(--ink); }
 
 .t-input {
-  width: 60px; padding: 6px 8px;
+  width: 52px; padding: 6px 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px; font-weight: 600;
   text-align: center;
@@ -540,8 +540,8 @@ body {
   background: white; color: var(--ink); outline: none;
 }
 .t-input:focus { border-color: var(--forma-blue); box-shadow: 0 0 0 3px rgba(61,165,224,0.15); }
-.t-input.name { width: 170px; text-align: left; font-family: 'Instrument Sans', sans-serif; font-weight: 600; }
-.t-input.eur { color: var(--forma-orange-dark); width: 75px; }
+.t-input.name { width: 140px; text-align: left; font-family: 'Instrument Sans', sans-serif; font-weight: 600; }
+.t-input.eur { color: var(--forma-orange-dark); width: 60px; }
 .t-input.day { width: 42px; }
 .t-day-btn {
   width: 48px; height: 42px; border: 2px solid var(--border); border-radius: 10px;
@@ -672,6 +672,7 @@ body {
     <button class="btn btn-primary" onclick="window.open('https://calculateur-de-marge-ten.vercel.app/','_blank')" title="Le transfert se fait depuis le calculateur : ouvre-le, clique sur 📤 Facturation mensuelle, et l'équipe arrivera ici automatiquement">↗ Ouvrir le Calculateur de Marge</button>
     <button class="btn btn-ghost" onclick="openCarnet()" title="Voir et gérer la liste des intérimaires connus (carnet persistant)">📚 Carnet</button>
     <button class="btn btn-ghost" onclick="openCoefsManager()" title="Modifier les coefficients par entreprise (TTF = sal_net × coef)">🏢 Coefficients</button>
+    <button class="btn btn-ghost" onclick="openArchivesModal()" title="Enregistrer / recharger des sauvegardes de tes tableaux (tu choisis quoi garder)">💾 Sauvegardes</button>
     <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
     <button class="btn btn-ghost" onclick="loadTestJDSMars2026()" title="Charge le test mars 2026 (chantier JDS / LE BAIA, 9 intérimaires, 5 semaines, calcul automatique)">🧪 Charger test JDS mars 2026</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
@@ -955,6 +956,26 @@ function loadStorage(){
   }catch(e){ return false; }
 }
 function clearStorage(){ try{ localStorage.removeItem(STORAGE_KEY); }catch(e){} }
+
+/* ════════ SAUVEGARDES (archives nommées, opt-in — séparées de l'auto-save) ════════ */
+const ARCHIVES_KEY = 'forma_archives_v1';
+let ARCHIVES = [];
+let archiveIdCtr = 1;
+function loadArchives(){
+  try{
+    const raw = localStorage.getItem(ARCHIVES_KEY);
+    if(raw){
+      const d = JSON.parse(raw);
+      if(Array.isArray(d.list)){
+        ARCHIVES = d.list;
+        archiveIdCtr = d.ctr || (ARCHIVES.reduce((m,a)=>Math.max(m, a.id||0), 0) + 1);
+      }
+    }
+  }catch(e){}
+}
+function saveArchivesStore(){
+  try{ localStorage.setItem(ARCHIVES_KEY, JSON.stringify({ list: ARCHIVES, ctr: archiveIdCtr })); }catch(e){}
+}
 
 /* ════════ UTILS ════════ */
 const f = (n) => isFinite(n) ? n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €' : '–';
@@ -1366,6 +1387,14 @@ function toggleFraisColumn(tableauId){
   render();
 }
 
+/* ════════ COLONNES FÉRIÉ (Heures / Salaire / Facturé — saisie manuelle, toggle) ════════ */
+function toggleFerieColumn(tableauId){
+  const t = getTableau(tableauId); if(!t) return;
+  t.hideFerie = !t.hideFerie;
+  saveStorage();
+  render();
+}
+
 /* ════════ DÉTAIL PAIE HEBDO — 1 mec (mode XL paysage) ════════ */
 function openPaieDetail(tableauId, empId){
   const t = getTableau(tableauId); if(!t) return;
@@ -1383,9 +1412,10 @@ function openPaieDetail(tableauId, empId){
   });
   // Primes (cumulées)
   const primes = e.primes || [];
+  // Total (vert) = à donner férié COMPRIS ; le férié n'est juste pas listé dans le bloc primes (cf shownPrimes)
   const totPrim = primes.reduce((s,p) => s + (parseFloat(p.montant)||0), 0);
   const empFrais = parseFloat(e.frais)||0;
-  const grandTotal = totSal + totPrim + empFrais;
+  const grandTotal = totSal + totPrim + empFrais + (parseFloat(e.ferieSal)||0);
 
   // En-tête semaines avec dates
   const headWeeks = cells.map(c => {
@@ -1414,8 +1444,9 @@ function openPaieDetail(tableauId, empId){
 
   // Ligne primes uniquement (les frais sont inclus dans le grandTotal mais non détaillés)
   let primesBlock = '';
-  if(primes.length){
-    const primeLines = primes.map(p => {
+  const shownPrimes = primes.filter(p => !String(p.label||'').startsWith('Férié'));
+  if(shownPrimes.length){
+    const primeLines = shownPrimes.map(p => {
       const m = parseFloat(p.montant)||0;
       return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px">
         <span style="color:var(--text)">↳ Prime : ${_esc(p.label)}${p.refacture?' <span style=\"font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:4px;margin-left:6px\">refacturée</span>':''}</span>
@@ -1500,23 +1531,30 @@ function openPaieRecapTableau(tableauId){
   const weeks = getWeeksOfMonth(STATE.year, STATE.month);
 
   // Calcul global pour toutes les lignes
-  let bigTot = 0, bigJ = 0;
+  let bigTot = 0, bigJ = 0, bigFac = 0;
   const empsData = t.emps.map(e => {
     const tjNet = (parseFloat(e.salNetHebdo)||0) / 5;
-    let mecTot = 0, totJ = 0;
+    const tjFac = (ttfHebdo(e.salNetHebdo, t.entreprise)||0) / 5;
+    let mecTot = 0, totJ = 0, mecFac = 0;
     const cells = weeks.map(w => {
       const j = parseFloat(e.jours[w]||0) || 0;
       const eur = j * tjNet;
       mecTot += eur;
+      mecFac += j * tjFac;
       totJ += j;
       return { j, eur };
     });
-    const primSal = (e.primes||[]).reduce((s,p) => s + (parseFloat(p.montant)||0), 0);
+    const allPrim = (e.primes||[]).reduce((s,p) => s + (parseFloat(p.montant)||0), 0);
+    // Primes AFFICHÉES sous le nom = hors férié (le férié compte dans le total VERT mais n'est pas annoté)
+    const primSal = (e.primes||[]).filter(p => !String(p.label||'').startsWith('Férié')).reduce((s,p) => s + (parseFloat(p.montant)||0), 0);
+    const primFac = (e.primes||[]).reduce((s,p) => s + (p.refacture ? (parseFloat(p.montant)||0) : 0), 0);
     const frais = parseFloat(e.frais)||0;
-    mecTot += primSal + frais;
+    mecTot += allPrim + frais + (parseFloat(e.ferieSal)||0); // total à donner (VERT) = tout, férié compris
+    mecFac += primFac + (parseFloat(e.ferieFac)||0); // facturé : jours + primes refac. + férié-fac
     bigTot += mecTot;
+    bigFac += mecFac;
     bigJ += totJ;
-    return { e, tjNet, cells, primSal, frais, mecTot, totJ };
+    return { e, tjNet, cells, primSal, frais, mecTot, mecFac, totJ };
   });
 
   // Construit les lignes : grandes cellules, couleurs claires, écriture lisible
@@ -1560,7 +1598,7 @@ function openPaieRecapTableau(tableauId){
     ${weekTotals.map((s,i) => {
       const isLast = i === weekTotals.length - 1;
       const borderR = isLast ? '' : 'border-right:1px solid var(--border)';
-      return `<td style="padding:18px 10px;text-align:center;${borderR};font-family:'JetBrains Mono',monospace;font-weight:900;color:${s>0?'var(--text)':'var(--text-faint)'};font-size:18px">${s>0 ? s.toLocaleString('fr-FR',{maximumFractionDigits:0})+' €' : '—'}</td>`;
+      return `<td style="padding:18px 10px;text-align:center;${borderR};font-family:'JetBrains Mono',monospace;font-weight:900;color:${s>0?'var(--text)':'var(--text-faint)'};font-size:18px">${s.toLocaleString('fr-FR',{maximumFractionDigits:0})} €</td>`;
     }).join('')}
     <td style="padding:18px 18px;text-align:right;border-left:2px solid var(--ok);font-family:'JetBrains Mono',monospace;font-weight:900;color:var(--ok);font-size:24px;background:var(--ok)" >
       <span style="color:#fff">${bigTot.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span>
@@ -1586,7 +1624,7 @@ function openPaieRecapTableau(tableauId){
 
   const html = `
     <!-- Hero info -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px">
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px">
       <div style="padding:14px 18px;background:var(--card);border:1px solid var(--border);border-left:4px solid var(--primary);border-radius:12px">
         <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Chantier</div>
         <div style="font-size:18px;font-weight:800;color:var(--text);margin-top:4px">${_esc(t.chantier||'—')}</div>
@@ -1602,6 +1640,10 @@ function openPaieRecapTableau(tableauId){
       <div style="padding:14px 18px;background:linear-gradient(135deg,var(--ok),#1a9863);border-radius:12px;color:#fff">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;opacity:.85">💰 TOTAL à donner</div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;margin-top:4px;line-height:1">${bigTot.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>
+      </div>
+      <div style="padding:14px 18px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-radius:12px;color:#fff">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;opacity:.85">💼 TOTAL facturé</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:900;margin-top:4px;line-height:1">${bigFac.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>
       </div>
     </div>
 
@@ -1658,8 +1700,11 @@ function renderEmpTableHTML(t, weeks){
   const coef = coefClient(t.entreprise);
   const coefLabel = `<span class="mono" style="font-size:11px;color:var(--text-muted);font-weight:600">×${coef.toFixed(2).replace('.',',')}</span>`;
   const showFrais = !t.hideFrais;
-  let head = `<div style="padding:8px 24px 0;font-size:11px;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:8px">
-    <span style="flex:1">💡 TTF dérivé automatiquement : <strong style="color:var(--text)">sal. net × ${coef.toFixed(2).replace('.',',')}</strong> (coef ${_esc((t.entreprise||'défaut').toUpperCase())}). Colonne <strong>Frais</strong> = perso (pas dans la facture client).</span>
+  const showFerie = !t.hideFerie;
+  const ferieHeadStyle = 'color:#2f4fb0;background:rgba(61,91,219,.08)';
+  let head = `<div style="padding:8px 24px 0;font-size:11px;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span style="flex:1;min-width:220px">💡 TTF dérivé automatiquement : <strong style="color:var(--text)">sal. net × ${coef.toFixed(2).replace('.',',')}</strong> (coef ${_esc((t.entreprise||'défaut').toUpperCase())}). Colonne <strong>Frais</strong> = perso (pas dans la facture client).</span>
+    <button class="btn-mini" onclick="toggleFerieColumn(${t.id})" style="font-size:11px;padding:5px 10px;background:${showFerie?'rgba(61,91,219,.12)':'var(--bg-2)'};color:${showFerie?'#2f4fb0':'var(--text-muted)'};border-color:${showFerie?'#2f4fb0':'var(--border)'}" title="Afficher/cacher les colonnes Férié (Heures / Salaire / Facturé, à remplir à la main). Indépendant de la prime +50€.">${showFerie?'👁️ Férié visible':'🙈 Férié caché'}</button>
     <button class="btn-mini" onclick="toggleFraisColumn(${t.id})" style="font-size:11px;padding:5px 10px;background:${showFrais?'var(--primary-soft)':'var(--bg-2)'};color:${showFrais?'var(--primary-dark)':'var(--text-muted)'};border-color:${showFrais?'var(--primary)':'var(--border)'}" title="Afficher/cacher la colonne frais (privée, jamais visible côté client)">${showFrais?'👁️ Frais visibles':'🙈 Frais cachés'}</button>
   </div>
   <div class="t-wrap"><table class="t"><thead><tr>
@@ -1671,15 +1716,18 @@ function renderEmpTableHTML(t, weeks){
   head += `<th class="center">Total/JR</th>
     <th class="salaire">SALAIRE</th>
     ${showFrais ? '<th class="right" style="color:var(--accent-dark)">FRAIS</th>' : ''}
+    ${showFerie ? `<th class="center" style="${ferieHeadStyle}">FÉRIÉ h</th><th class="right" style="${ferieHeadStyle}">FÉRIÉ sal €</th><th class="right" style="${ferieHeadStyle}">FÉRIÉ fac €</th>` : ''}
     <th class="facture">FACTURE</th>
     <th></th>
   </tr></thead><tbody>`;
 
   let body='';
-  let tSal=0, tFac=0, tJr=0, tFrais=0;
+  let tSal=0, tFac=0, tJr=0, tFrais=0, tFerieH=0, tFerieSal=0, tFerieFac=0;
   t.emps.forEach(e => {
     const empFrais = parseFloat(e.frais)||0;
     tFrais += empFrais;
+    const ferieH = parseFloat(e.ferieHeures)||0, ferieSal = parseFloat(e.ferieSal)||0, ferieFac = parseFloat(e.ferieFac)||0;
+    tFerieH += ferieH; tFerieSal += ferieSal; tFerieFac += ferieFac;
     const ttf = ttfHebdo(e.salNetHebdo, t.entreprise);
     const tjNet = e.salNetHebdo / 5, tjFac = ttf / 5;
     let totJr = 0;
@@ -1688,12 +1736,16 @@ function renderEmpTableHTML(t, weeks){
     const primes = e.primes || [];
     const primSal = primes.reduce((s,p)=>s+(parseFloat(p.montant)||0), 0);
     const primFac = primes.reduce((s,p)=>s+(p.refacture?(parseFloat(p.montant)||0):0), 0);
-    // SALAIRE total à donner au mec = jours×€/J + primes + frais (frais NON facturé au client)
-    const empSalTotal = salJ + primSal + empFrais;
-    tJr += totJr; tSal += empSalTotal; tFac += facJ + primFac;
+    // SALAIRE = jours×€/J + primes + frais + férié-sal (frais & férié-sal NON facturés) ; FACTURE = jours + primes refac. + férié-fac
+    const empSalTotal = salJ + primSal + empFrais + ferieSal;
+    const empFacTotal = facJ + primFac + ferieFac;
+    tJr += totJr; tSal += empSalTotal; tFac += empFacTotal;
 
     const fraisCell = showFrais
       ? `<td class="right"><input class="t-input eur" inputmode="decimal" value="${e.frais||0}" onchange="setEmpField(${t.id},${e.id},'frais',this.value)" style="color:var(--accent-dark);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 30%,transparent)" title="Frais personnels (pas dans la facture client)"></td>`
+      : '';
+    const ferieCells = showFerie
+      ? `<td class="center"><input class="t-input" inputmode="decimal" value="${e.ferieHeures||0}" onchange="setEmpField(${t.id},${e.id},'ferieHeures',this.value)" style="text-align:center;color:#2f4fb0;background:rgba(61,91,219,.06);border-color:rgba(61,91,219,.3)" title="Heures fériées (info — n'impacte pas les totaux)"></td><td class="right"><input class="t-input eur" inputmode="decimal" value="${e.ferieSal||0}" onchange="setEmpField(${t.id},${e.id},'ferieSal',this.value)" style="color:#2f4fb0;background:rgba(61,91,219,.06);border-color:rgba(61,91,219,.3)" title="Montant férié ajouté au SALAIRE (pas à la facture)"></td><td class="right"><input class="t-input eur" inputmode="decimal" value="${e.ferieFac||0}" onchange="setEmpField(${t.id},${e.id},'ferieFac',this.value)" style="color:#2f4fb0;background:rgba(61,91,219,.06);border-color:rgba(61,91,219,.3)" title="Montant férié ajouté à la FACTURE"></td>`
       : '';
     body += `<tr>
       <td><input class="t-input name" list="carnet-datalist" value="${_esc(e.nom)}" placeholder="Nom Prénom" onchange="setEmpField(${t.id},${e.id},'nom',this.value)"></td>
@@ -1726,7 +1778,8 @@ function renderEmpTableHTML(t, weeks){
     body += `<td class="center" style="font-weight:700">${totJr}</td>
       <td class="right salaire">${f(empSalTotal)}</td>
       ${fraisCell}
-      <td class="right facture">${f(facJ + primFac)}</td>
+      ${ferieCells}
+      <td class="right facture">${f(empFacTotal)}</td>
       <td style="white-space:nowrap">
         <button class="btn-icon" onclick="openPaieDetail(${t.id},${e.id})" title="Détail paie hebdo (combien donner par semaine)" style="color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,transparent);background:var(--ok-soft);margin-right:3px">💰</button>
         <button class="btn-icon" onclick="addPrime(${t.id},${e.id})" title="Ajouter une prime ponctuelle" style="color:var(--accent-dark);border-color:color-mix(in srgb,var(--accent) 30%,transparent);background:var(--accent-soft);margin-right:3px">＋€</button>
@@ -1740,6 +1793,7 @@ function renderEmpTableHTML(t, weeks){
         <td class="center" style="font-style:italic;color:var(--accent-dark)">—</td>
         <td class="right" style="color:var(--accent-dark)">+${f(p.montant)}</td>
         ${showFrais ? '<td class="right" style="color:var(--text-faint)">—</td>' : ''}
+        ${showFerie ? '<td class="center" style="color:var(--text-faint)">—</td><td class="right" style="color:var(--text-faint)">—</td><td class="right" style="color:var(--text-faint)">—</td>' : ''}
         <td class="right" style="color:var(--accent-dark)">${p.refacture?'+'+f(p.montant):'—'}</td>
         <td><button class="btn-icon" onclick="delPrime(${t.id},${e.id},${p.id})" title="Supprimer prime">✕</button></td>
       </tr>`;
@@ -1750,6 +1804,7 @@ function renderEmpTableHTML(t, weeks){
     <td class="center">${tJr}</td>
     <td class="right">${f(tSal)}</td>
     ${showFrais ? `<td class="right" style="color:var(--accent-dark);background:var(--accent-soft)">${f(tFrais)}</td>` : ''}
+    ${showFerie ? `<td class="center" style="color:#2f4fb0;background:rgba(61,91,219,.08)">${tFerieH||''}</td><td class="right" style="color:#2f4fb0;background:rgba(61,91,219,.08)">${f(tFerieSal)}</td><td class="right" style="color:#2f4fb0;background:rgba(61,91,219,.08)">${f(tFerieFac)}</td>` : ''}
     <td class="right">${f(tFac)}</td>
     <td></td>
   </tr></tbody></table></div>`;
@@ -1800,7 +1855,9 @@ function renderTableau(t, weeks){
     tJr += j;
     tSal += j * (e.salNetHebdo/5);
     tSal += parseFloat(e.frais)||0; // frais → ajoutés au salaire (acompte total), pas à la facture
+    tSal += parseFloat(e.ferieSal)||0; // férié-sal → salaire (pas facturé)
     tFac += j * (e.factureHebdo/5);
+    tFac += parseFloat(e.ferieFac)||0; // férié-fac → facture
     (e.primes||[]).forEach(p => {
       tSal += parseFloat(p.montant)||0;
       if(p.refacture) tFac += parseFloat(p.montant)||0;
@@ -1865,7 +1922,9 @@ function computeGlobalTotals(){
       tJr += j;
       tSal += j * (e.salNetHebdo/5);
       tSal += parseFloat(e.frais)||0; // frais → salaire (acompte)
+      tSal += parseFloat(e.ferieSal)||0; // férié-sal → salaire (pas facturé)
       tFac += j * (e.factureHebdo/5);
+      tFac += parseFloat(e.ferieFac)||0; // férié-fac → facture
       (e.primes||[]).forEach(p => {
         const m = parseFloat(p.montant)||0;
         tSal += m;
@@ -1956,7 +2015,7 @@ function exportCSV(){
       const primes = e.primes || [];
       const primSal = primes.reduce((s,p)=>s+(parseFloat(p.montant)||0),0);
       const primFac = primes.reduce((s,p)=>s+(p.refacture?(parseFloat(p.montant)||0):0),0);
-      const sal = j*tjN + primSal, fac = j*tjF + primFac;
+      const sal = j*tjN + primSal + (parseFloat(e.ferieSal)||0), fac = j*tjF + primFac + (parseFloat(e.ferieFac)||0);
       tJr += j; tSal += sal; tFac += fac;
       csv += [
         e.nom, e.salNetHebdo, e.factureHebdo,
@@ -2511,6 +2570,77 @@ function closeModal(){
   if(m) m.remove();
 }
 
+/* ════════ SAUVEGARDES — modale + actions ════════ */
+function _archiveNbEmps(tableaux){ return (tableaux||[]).reduce((s,t)=>s+((t.emps||[]).length),0); }
+function openArchivesModal(){
+  const fmtDate = iso => { try{ return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+  const list = ARCHIVES.length ? ARCHIVES.map(a => `
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:var(--card)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;color:var(--text);font-size:15px">${_esc(a.name)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${fmtDate(a.date)} · ${a.nbTableaux} tableau${a.nbTableaux>1?'x':''} · ${a.nbEmps} intérim. · ${monthName(a.month)} ${a.year}</div>
+      </div>
+      <button class="btn btn-primary" onclick="archiveLoad(${a.id})" style="white-space:nowrap">📂 Charger</button>
+      <button class="btn btn-ghost" onclick="archiveDelete(${a.id})" title="Supprimer cette sauvegarde" style="color:#dc2626;border-color:color-mix(in srgb,#dc2626 30%,transparent)">🗑️</button>
+    </div>`).join('') : `<div style="text-align:center;color:var(--text-muted);padding:34px 10px;font-size:14px">Aucune sauvegarde pour l'instant.<br>Clique « 💾 Enregistrer la session actuelle » ci-dessus.</div>`;
+  const nbEmps = _archiveNbEmps(STATE.tableaux);
+  const html = `
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:12px;margin-bottom:18px;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        <div style="font-weight:800;color:var(--primary-dark)">Session actuelle</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${STATE.tableaux.length} tableau${STATE.tableaux.length>1?'x':''} · ${nbEmps} intérim. · ${monthName(STATE.month)} ${STATE.year}</div>
+      </div>
+      <button class="btn btn-primary" onclick="archiveSaveCurrent()">💾 Enregistrer la session actuelle</button>
+    </div>
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px">Mes sauvegardes (${ARCHIVES.length})</div>
+    ${list}`;
+  showModal('💾 Sauvegardes', html, { size: 'lg' });
+}
+function archiveSaveCurrent(){
+  if(!STATE.tableaux.length || !STATE.tableaux.some(t=>(t.emps||[]).length)){ alert('Aucun tableau à enregistrer (ajoute au moins un intérimaire).'); return; }
+  const ents = [...new Set(STATE.tableaux.map(t=>t.entreprise).filter(Boolean))].join(', ');
+  const suggestion = `${ents||'Session'} — ${monthName(STATE.month)} ${STATE.year}`;
+  const name = prompt('Nom de la sauvegarde :', suggestion);
+  if(name === null) return; // annulé
+  ARCHIVES.unshift({
+    id: archiveIdCtr++,
+    name: (name.trim() || suggestion),
+    date: new Date().toISOString(),
+    year: STATE.year, month: STATE.month,
+    tableaux: JSON.parse(JSON.stringify(STATE.tableaux)),
+    nbTableaux: STATE.tableaux.length,
+    nbEmps: _archiveNbEmps(STATE.tableaux),
+  });
+  saveArchivesStore();
+  openArchivesModal();
+}
+function archiveLoad(id){
+  const a = ARCHIVES.find(x=>x.id===id); if(!a) return;
+  if(!confirm(`Charger « ${a.name} » ?\n\n⚠️ Cela REMPLACE les ${STATE.tableaux.length} tableau(x) affichés actuellement. Enregistre-les d'abord si tu veux les garder.`)) return;
+  STATE.tableaux = JSON.parse(JSON.stringify(a.tableaux));
+  if(typeof a.year==='number') STATE.year = a.year;
+  if(typeof a.month==='number') STATE.month = a.month;
+  // Évite les collisions d'id après chargement
+  STATE.tableaux.forEach(t => {
+    if((t.id||0) >= STATE.tableauIdCtr) STATE.tableauIdCtr = t.id + 1;
+    (t.emps||[]).forEach(e => {
+      if((e.id||0) >= STATE.empIdCtr) STATE.empIdCtr = e.id + 1;
+      (e.primes||[]).forEach(p => { if((p.id||0) >= STATE.primeIdCtr) STATE.primeIdCtr = p.id + 1; });
+    });
+  });
+  saveStorage();
+  closeModal();
+  const ms = document.getElementById('mois'); if(ms) ms.value = `${STATE.year}-${STATE.month}`;
+  render();
+}
+function archiveDelete(id){
+  const a = ARCHIVES.find(x=>x.id===id); if(!a) return;
+  if(!confirm(`Supprimer la sauvegarde « ${a.name} » ?\n(Tes tableaux actuels ne sont pas touchés.)`)) return;
+  ARCHIVES = ARCHIVES.filter(x=>x.id!==id);
+  saveArchivesStore();
+  openArchivesModal();
+}
+
 /* ════════ IMPORT CSV — relevé d'heures P/A ════════ */
 function triggerImportCSV(){
   document.getElementById('csv-import-input').click();
@@ -2846,6 +2976,7 @@ function showImportBanner(count){
 
 /* ════════ INIT ════════ */
 loadStorage();
+loadArchives();
 ensureFirstTableau();
 // Hydrate le carnet depuis tous les tableaux (au cas où c'est la 1ʳᵉ ouverture après mise à jour)
 STATE.tableaux.forEach(t => {

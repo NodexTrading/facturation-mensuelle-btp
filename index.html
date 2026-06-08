@@ -674,7 +674,7 @@ body {
     <button class="btn btn-ghost" onclick="openCoefsManager()" title="Modifier les coefficients par entreprise (TTF = sal_net × coef)">🏢 Coefficients</button>
     <button class="btn btn-ghost" onclick="openArchivesModal()" title="Enregistrer / recharger des sauvegardes de tes tableaux (tu choisis quoi garder)">💾 Sauvegardes</button>
     <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
-    <button class="btn btn-ghost" onclick="loadTestJDSMars2026()" title="Charge le test mars 2026 (chantier JDS / LE BAIA, 9 intérimaires, 5 semaines, calcul automatique)">🧪 Charger test JDS mars 2026</button>
+    <button class="btn btn-primary" onclick="location.href='v2heures.html'" title="Ouvre le système V2 — comptage en HEURES (nouveau design, taux €/h, chantiers colorés)">⏱️ V2 heure</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimer / PDF</button>
     <input type="file" id="csv-import-input" accept=".csv,.txt" style="display:none" onchange="onCSVImport(event)">

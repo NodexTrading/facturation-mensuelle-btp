@@ -3,3 +3,16 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.log
+
+# --- API : pas voulu en ligne pour l'instant ("sans le truc API") ---
+api/
+equipe.html
+
+# --- PII / documents sources : NE JAMAIS publier ---
+*.pdf
+SALAIRE/
+RESUME_SESSION*.md
+carnet_bulk*.txt
+*.csv
+data/
+mockups/

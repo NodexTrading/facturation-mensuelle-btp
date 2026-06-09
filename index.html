@@ -2984,22 +2984,28 @@ function importFromHash(){
     // Période : si data fournit year/month, on l'applique globalement
     if(typeof data.year==='number')  STATE.year  = data.year;
     if(typeof data.month==='number') STATE.month = data.month;
-    // Crée un NOUVEAU tableau pour cet import (1 calcul de marge = 1 tableau)
     let added = 0;
-    if(Array.isArray(data.emps) && data.emps.length){
-      const t = newTableau({ chantier: data.chantier || '', entreprise: data.entreprise || '' });
-      data.emps.forEach(e => {
-        const nom = e.nom||'';
-        const salNetHebdo = parseFloat(e.salNetHebdo)||0;
-        // Le facturé du payload est ignoré : on dérive systématiquement du coef du tableau
-        const factureHebdo = ttfHebdo(salNetHebdo, t.entreprise);
-        t.emps.push({
-          id: STATE.empIdCtr++,
-          nom, salNetHebdo, factureHebdo, jours: {}, primes: [],
-        });
-        carnetUpsert(nom, salNetHebdo, factureHebdo, t.entreprise);
-        added++;
+    // Fonction d'ajout d'un intérimaire dans un tableau donné.
+    const pushEmp = (t, e) => {
+      const nom = e.nom||'';
+      const salNetHebdo = parseFloat(e.salNetHebdo)||0;
+      // Le facturé du payload est ignoré : on dérive systématiquement du coef du tableau.
+      const factureHebdo = ttfHebdo(salNetHebdo, t.entreprise);
+      t.emps.push({ id: STATE.empIdCtr++, nom, salNetHebdo, factureHebdo, jours: {}, primes: [] });
+      carnetUpsert(nom, salNetHebdo, factureHebdo, t.entreprise);
+      added++;
+    };
+    if(Array.isArray(data.groups) && data.groups.length){
+      // NOUVEAU FORMAT : un tableau par couple (entreprise, chantier).
+      data.groups.forEach(g => {
+        if(!Array.isArray(g.emps) || !g.emps.length) return;
+        const t = newTableau({ chantier: g.chantier || '', entreprise: g.entreprise || '' });
+        g.emps.forEach(e => pushEmp(t, e));
       });
+    } else if(Array.isArray(data.emps) && data.emps.length){
+      // ANCIEN FORMAT (à plat) : un seul tableau. Rétro-compatibilité.
+      const t = newTableau({ chantier: data.chantier || '', entreprise: data.entreprise || '' });
+      data.emps.forEach(e => pushEmp(t, e));
     }
     try{ history.replaceState(null,'',window.location.pathname); }catch(e){}
     return added;

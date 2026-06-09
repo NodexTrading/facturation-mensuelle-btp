@@ -1,3 +1,26 @@
-# Exclu du deploiement (pas pret / pas voulu en ligne pour l'instant)
+# Exclu du deploiement Vercel
+# Ne garder en ligne que : index.html, v2heures.html, pointage.html, vercel.json, public/
+
+# --- pas pret / pas voulu en ligne ---
 api
 equipe.html
+
+# --- PII / documents sources : NE JAMAIS publier ---
+*.pdf
+*.csv
+*.txt
+*.md
+data
+SALAIRE
+mockups
+carnet_bulk*
+RESUME_SESSION*
+liste*
+
+# --- divers ---
+*.log
+.git
+.gitignore
+node_modules
+.DS_Store
+Thumbs.db

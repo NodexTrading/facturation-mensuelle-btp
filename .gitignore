@@ -13,6 +13,7 @@ equipe.html
 SALAIRE/
 RESUME_SESSION*.md
 carnet_bulk*.txt
+liste_*.txt
 *.csv
 data/
 mockups/

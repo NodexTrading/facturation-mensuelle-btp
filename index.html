@@ -1290,7 +1290,7 @@ function openCoefsManager(){
     </div>
 
     <!-- Aide -->
-    <div style="margin-top:14px;padding:14px 18px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;display:flex;gap:12px;align-items:start">
+    <div class="no-print" style="margin-top:14px;padding:14px 18px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;display:flex;gap:12px;align-items:start">
       <span style="font-size:22px;line-height:1">💡</span>
       <div style="flex:1">
         <div style="font-weight:700;color:var(--text);margin-bottom:4px">Formule</div>
@@ -1508,7 +1508,7 @@ function openPaieDetail(tableauId, empId){
     ${primesBlock}
 
     <!-- Aide -->
-    <div style="margin-top:14px;padding:14px 18px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;display:flex;gap:12px;align-items:start">
+    <div class="no-print" style="margin-top:14px;padding:14px 18px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;display:flex;gap:12px;align-items:start">
       <span style="font-size:24px;line-height:1">💡</span>
       <div style="flex:1">
         <div style="font-weight:700;color:var(--text);margin-bottom:4px">Comment lire ce tableau</div>
@@ -1519,7 +1519,7 @@ function openPaieDetail(tableauId, empId){
     <!-- Actions -->
     <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-ghost" style="padding:12px 22px;font-size:14px;min-height:auto;font-weight:600" onclick="closeModal()">Fermer</button>
-      <button class="btn btn-primary" style="padding:12px 22px;font-size:14px;min-height:auto;font-weight:700" onclick="window.print()">🖨️ Imprimer</button>
+      <button class="btn btn-primary" style="padding:12px 22px;font-size:14px;min-height:auto;font-weight:700" onclick="printModalLandscape()">🖨️ Imprimer</button>
     </div>`;
   showModal('💰 Détail paie hebdo — ' + e.nom, html, { size: 'xl' });
 }
@@ -1653,7 +1653,7 @@ function openPaieRecapTableau(tableauId){
     </div>
 
     <!-- Aide -->
-    <div style="margin-top:14px;padding:14px 18px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;display:flex;gap:12px;align-items:start">
+    <div class="no-print" style="margin-top:14px;padding:14px 18px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;display:flex;gap:12px;align-items:start">
       <span style="font-size:24px;line-height:1">💡</span>
       <div style="flex:1">
         <div style="font-weight:700;color:var(--text);margin-bottom:4px">Comment lire ce tableau</div>
@@ -1664,9 +1664,57 @@ function openPaieRecapTableau(tableauId){
     <!-- Actions -->
     <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn btn-ghost" style="padding:12px 22px;font-size:14px;min-height:auto;font-weight:600" onclick="closeModal()">Fermer</button>
-      <button class="btn btn-primary" style="padding:12px 22px;font-size:14px;min-height:auto;font-weight:700" onclick="window.print()">🖨️ Imprimer</button>
+      <button class="btn btn-primary" style="padding:12px 22px;font-size:14px;min-height:auto;font-weight:700" onclick="printModalLandscape()">🖨️ Imprimer</button>
     </div>`;
   showModal('💰 Récap paie hebdo — ' + (t.chantier||'(sans nom)'), html, { size: 'xl' });
+}
+
+/* ════════ IMPRESSION PAYSAGE — fenêtre dédiée ════════
+   Ouvre la modale actuellement affichée (récap ou détail paie hebdo) dans une
+   fenêtre propre en A4 PAYSAGE : on réutilise le tableau déjà rendu (mêmes styles
+   et couleurs), on retire le décor de l'app + l'aide + les boutons, et on force
+   l'orientation paysage. Ne touche pas au bouton « Imprimer / PDF » global. */
+function printModalLandscape(){
+  const ov = document.getElementById('modal-overlay');
+  if(!ov){ alert('Ouvre d\'abord le tableau à imprimer.'); return; }
+  const card = ov.firstElementChild;
+  const titleEl = card.querySelector('h2');
+  const title = titleEl ? titleEl.textContent.trim() : 'Paie hebdo';
+  const body = card.children[card.children.length - 1]; // dernier enfant = corps de la modale
+  const clone = body.cloneNode(true);
+  // on enlève tout ce qui ne doit pas être imprimé
+  clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
+  // on récupère les styles + polices de l'app pour un rendu identique
+  const styles = Array.from(document.querySelectorAll('style')).map(s => s.outerHTML).join('');
+  const links  = Array.from(document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"]')).map(l => l.outerHTML).join('');
+  const w = window.open('', '_blank', 'width=1280,height=860');
+  if(!w){ alert('Autorise les pop-ups pour ce site afin d\'imprimer.'); return; }
+  const printCss = [
+    '@page{ size:A4 landscape; margin:8mm; }',
+    'html,body{ background:#fff !important; margin:0; padding:0; }',
+    '.pl-wrap{ padding:4mm 2mm; }',
+    '.pl-wrap > h1{ font-family:"Bricolage Grotesque",system-ui,-apple-system,sans-serif; font-size:18px; font-weight:800; color:#0F2B4A; margin:0 0 12px; }',
+    '*{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }',
+    // neutralise les sticky / scroll de l'app pour que tout soit visible à l'impression
+    '[style*="position:sticky"],[style*="position: sticky"]{ position:static !important; box-shadow:none !important; }',
+    '[style*="overflow:auto"],[style*="overflow: auto"],[style*="overflow-x:auto"],[style*="overflow-y:auto"]{ overflow:visible !important; max-height:none !important; }',
+    'table{ width:100% !important; border-collapse:collapse; }',
+    'thead{ display:table-header-group; }', // répète l'entête sur chaque page
+    'tr,td,th{ break-inside:avoid; page-break-inside:avoid; }',
+  ].join('\n');
+  w.document.write(
+    '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+    + '<title>' + title + '</title>'
+    + links + styles
+    + '<style>' + printCss + '</style></head>'
+    + '<body><div class="pl-wrap"><h1>' + title + '</h1>'
+    + clone.innerHTML
+    + '</div></body></html>'
+  );
+  w.document.close();
+  w.focus();
+  // petit délai pour laisser les polices/styles se charger avant la boîte d'impression
+  setTimeout(function(){ try{ w.print(); }catch(e){} }, 450);
 }
 
 /* ════════ FÉRIÉS — tableau-aware ════════ */

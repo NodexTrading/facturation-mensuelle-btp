@@ -1690,18 +1690,23 @@ function printModalLandscape(){
   const w = window.open('', '_blank', 'width=1280,height=860');
   if(!w){ alert('Autorise les pop-ups pour ce site afin d\'imprimer.'); return; }
   const printCss = [
-    '@page{ size:A4 landscape; margin:8mm; }',
+    '@page{ size:A4 landscape; margin:7mm; }',
     'html,body{ background:#fff !important; margin:0; padding:0; }',
-    '.pl-wrap{ padding:4mm 2mm; }',
-    '.pl-wrap > h1{ font-family:"Bricolage Grotesque",system-ui,-apple-system,sans-serif; font-size:18px; font-weight:800; color:#0F2B4A; margin:0 0 12px; }',
+    '.pl-wrap{ padding:0; transform-origin:top left; }',
+    '.pl-wrap > h1{ font-family:"Bricolage Grotesque",system-ui,-apple-system,sans-serif; font-size:17px; font-weight:800; color:#0F2B4A; margin:0 0 8px; }',
     '*{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }',
     // neutralise les sticky / scroll de l'app pour que tout soit visible à l'impression
     '[style*="position:sticky"],[style*="position: sticky"]{ position:static !important; box-shadow:none !important; }',
     '[style*="overflow:auto"],[style*="overflow: auto"],[style*="overflow-x:auto"],[style*="overflow-y:auto"]{ overflow:visible !important; max-height:none !important; }',
     'table{ width:100% !important; border-collapse:collapse; }',
-    'thead{ display:table-header-group; }', // répète l'entête sur chaque page
+    // compaction verticale pour faire tenir plus de lignes
+    '.pl-wrap td, .pl-wrap th{ padding:5px 8px !important; }',
     'tr,td,th{ break-inside:avoid; page-break-inside:avoid; }',
   ].join('\n');
+  // Script injecté dans la fenêtre d'impression : calcule un ZOOM pour que TOUT
+  // le tableau (quel que soit le nb d'intérimaires) tienne sur 1 SEULE page paysage,
+  // puis lance l'impression. On mesure à la largeur réelle de la page (A4 paysage).
+  const fitScript = '<script>(function(){function fit(){try{var wrap=document.querySelector(".pl-wrap");if(wrap){var MM=96/25.4,marg=7;var pageW=(297-2*marg)*MM;var pageH=(210-2*marg)*MM;document.body.style.width=pageW+"px";wrap.style.zoom="1";var w=wrap.scrollWidth,h=wrap.scrollHeight;var s=Math.min(1,pageW/w,pageH/h)*0.98;wrap.style.zoom=String(s);}}catch(e){}setTimeout(function(){window.focus();window.print();},80);}if(document.readyState==="complete"){setTimeout(fit,300);}else{window.addEventListener("load",function(){setTimeout(fit,300);});}})();<\/script>';
   w.document.write(
     '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
     + '<title>' + title + '</title>'
@@ -1709,12 +1714,10 @@ function printModalLandscape(){
     + '<style>' + printCss + '</style></head>'
     + '<body><div class="pl-wrap"><h1>' + title + '</h1>'
     + clone.innerHTML
-    + '</div></body></html>'
+    + '</div>' + fitScript + '</body></html>'
   );
   w.document.close();
   w.focus();
-  // petit délai pour laisser les polices/styles se charger avant la boîte d'impression
-  setTimeout(function(){ try{ w.print(); }catch(e){} }, 450);
 }
 
 /* ════════ FÉRIÉS — tableau-aware ════════ */

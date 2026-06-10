@@ -686,6 +686,7 @@ main.app{max-width:min(1900px,98vw)!important}
     <button class="btn btn-ghost" onclick="openCarnetH()">📒 Carnet (heures)</button>
     <button class="btn btn-ghost" onclick="openArchives()">💾 Sauvegardes</button>
     <button class="btn btn-accent" onclick="triggerCSV()" title="Importer un CSV d'heures (blocs # chantier: + # semaine: Sxx, colonnes nom;lun;mar;mer;jeu;ven;sam;dim;net;fact;prime;verse;note)">📎 Importer CSV (heures)</button>
+    <button class="btn btn-ghost" onclick="openPaieMois()" title="Combien donner à chaque intérimaire, semaine par semaine (tous chantiers confondus)" style="background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,transparent)">💰 Paie du mois</button>
     <button class="btn btn-ghost" onclick="printFicheV2()" title="Tous les chantiers du mois sur UNE page A4 paysage">🖨️ Fiche du mois (1 page)</button>
     <button class="btn btn-ghost" onclick="resetAll()">↺ Réinitialiser</button>
     <input type="file" id="csvfile" accept=".csv,.txt" style="display:none" onchange="onCSV(event)">
@@ -840,7 +841,7 @@ function carnetHFind(nom){ const k=_nk(nom); return Object.keys(CARNET_H).find(n
 function carnetHUpsert(nom,a,f){ const t=(nom||'').trim(); if(!t)return; const ex=carnetHFind(t)||t; const p=CARNET_H[ex]||{}; CARNET_H[ex]={txAcompt:(a||p.txAcompt||''),txFact:(f||p.txFact||'')}; carnetHSave(); refreshCarnetHList(); }
 function carnetHDelete(nom){ const k=carnetHFind(nom); if(k){ delete CARNET_H[k]; carnetHSave(); refreshCarnetHList(); openCarnetH(); } }
 function refreshCarnetHList(){ const dl=document.getElementById('carnet-h-list'); if(!dl)return; dl.innerHTML=Object.keys(CARNET_H).sort().map(n=>`<option value="${esc(n)}">${esc(CARNET_H[n].txAcompt||'?')} €/h</option>`).join(''); }
-function showModal(t,h){ closeModal(); const o=document.createElement('div'); o.id='v2modal'; o.style.cssText='position:fixed;inset:0;background:rgba(15,43,74,.55);backdrop-filter:blur(4px);z-index:200;display:grid;place-items:center;padding:20px'; o.onclick=e=>{if(e.target===o)closeModal();}; o.innerHTML=`<div style="background:var(--card);border:1px solid var(--border);border-radius:22px;box-shadow:var(--shadow-lg);max-width:680px;width:100%;max-height:88vh;overflow:hidden;display:flex;flex-direction:column"><div style="padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px"><h2 style="font-size:17px;font-weight:800;margin:0;flex:1;font-family:'Bricolage Grotesque',sans-serif">${t}</h2><button onclick="closeModal()" style="width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text-muted);font-size:16px">✕</button></div><div style="padding:22px 24px;overflow:auto">${h}</div></div>`; document.body.appendChild(o); }
+function showModal(t,h,maxw){ closeModal(); const o=document.createElement('div'); o.id='v2modal'; o.style.cssText='position:fixed;inset:0;background:rgba(15,43,74,.55);backdrop-filter:blur(4px);z-index:200;display:grid;place-items:center;padding:20px'; o.onclick=e=>{if(e.target===o)closeModal();}; o.innerHTML=`<div style="background:var(--card);border:1px solid var(--border);border-radius:22px;box-shadow:var(--shadow-lg);max-width:${maxw||'680px'};width:100%;max-height:${maxw?'96vh':'88vh'};overflow:hidden;display:flex;flex-direction:column"><div style="padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px"><h2 style="font-size:17px;font-weight:800;margin:0;flex:1;font-family:'Bricolage Grotesque',sans-serif">${t}</h2><button onclick="closeModal()" style="width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text-muted);font-size:16px">✕</button></div><div style="padding:22px 24px;overflow:auto">${h}</div></div>`; document.body.appendChild(o); }
 function closeModal(){ const m=document.getElementById('v2modal'); if(m)m.remove(); }
 function openCarnetH(){
   const keys=Object.keys(CARNET_H).sort((a,b)=>a.localeCompare(b));
@@ -894,6 +895,111 @@ function importCSV(text){
   if(!STATE.chantiers.length)STATE.chantiers.push({id:uid(),nom:'',couleur:COLORS[0],emps:[newEmp()]});
   save(); render();
   alert(`✅ Import : ${nCh} chantier(s) · ${nE} intérimaire(s) · ${nWk} semaine(s) chargées.`);
+}
+
+/* ════════ 💰 PAIE DU MOIS (V2) ════════
+   Combien DONNER à chaque intérimaire, semaine par semaine — TOUS CHANTIERS
+   CONFONDUS (un mec éclaté sur St Roch + Arles = UNE seule ligne de paie).
+   € semaine = Σ (heures du jour × €/h net de l'entrée chantier correspondante). */
+function _paieMoisData(){
+  const days = monthDays(STATE.year, STATE.month);
+  const weeks = []; const wmap = {};
+  days.forEach(i => { if(!wmap[i.week]){ wmap[i.week]={first:i.d,last:i.d}; weeks.push(i.week); } else { wmap[i.week].last=i.d; } });
+  const map = {}; const order = [];
+  STATE.chantiers.forEach(c => (c.emps||[]).forEach(e => {
+    const nom = (e.nom||'').trim();
+    if(!nom && !Object.keys(e.jours||{}).length) return;
+    const key = _nk(nom||'(sans nom)');
+    if(!map[key]){ map[key]={ nom:nom||'(sans nom)', weeks:{}, nbh:0, act:0, prime:0, verse:0, rates:{}, chs:[] }; order.push(key); }
+    const g = map[key];
+    if(c.nom && g.chs.indexOf(c.nom)<0) g.chs.push(c.nom);
+    const tx = num(e.txAcompt);
+    Object.keys(e.jours||{}).forEach(d => {
+      const h = num(e.jours[d]); if(!h) return;
+      const info = days[parseInt(d,10)-1]; if(!info) return;
+      if(!g.weeks[info.week]) g.weeks[info.week]={h:0,eur:0};
+      g.weeks[info.week].h += h; g.weeks[info.week].eur += h*tx;
+      g.nbh += h; g.act += h*tx;
+      if(tx) g.rates[tx] = true;
+    });
+    g.prime += num(e.prime); g.verse += num(e.verse);
+  }));
+  const rows = order.map(k => map[k]).filter(g => g.nbh || g.prime || g.verse);
+  const tot = { nbh:0, act:0, prime:0, verse:0, weeks:{} };
+  rows.forEach(g => { tot.nbh+=g.nbh; tot.act+=g.act; tot.prime+=g.prime; tot.verse+=g.verse;
+    weeks.forEach(w => { if(g.weeks[w]){ if(!tot.weeks[w])tot.weeks[w]={h:0,eur:0}; tot.weeks[w].h+=g.weeks[w].h; tot.weeks[w].eur+=g.weeks[w].eur; } }); });
+  return { weeks, wmap, rows, tot };
+}
+function _paieWeekHead(weeks, wmap){
+  const mm = ('0'+(STATE.month+1)).slice(-2);
+  return weeks.map(w => `<th style="text-align:center"><div>S${w}</div><div style="font-size:9px;font-weight:600;color:var(--text-faint)">${('0'+wmap[w].first).slice(-2)}/${mm} → ${('0'+wmap[w].last).slice(-2)}/${mm}</div></th>`).join('');
+}
+function openPaieMois(){
+  const { weeks, wmap, rows, tot } = _paieMoisData();
+  if(!rows.length){ alert('Aucun intérimaire avec des heures ce mois-ci.'); return; }
+  const aDonner = tot.act + tot.prime, reste = aDonner - tot.verse;
+  const hero = `<div class="no-print" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">
+    <div style="padding:12px 16px;border:1px solid var(--border);border-radius:14px;border-left:4px solid var(--primary)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">Mois · équipe · heures</div><div style="font-size:16px;font-weight:800;margin-top:4px">${MOIS[STATE.month]} ${STATE.year} · ${rows.length} pers. · ${hh(tot.nbh)} h</div></div>
+    <div style="padding:12px 16px;border:1px solid var(--border);border-radius:14px;border-left:4px solid var(--ok);background:var(--ok-soft)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">💰 Total à donner</div><div style="font-size:20px;font-weight:900;margin-top:4px;color:var(--ok);font-family:'JetBrains Mono',monospace">${eur(aDonner)}</div></div>
+    <div style="padding:12px 16px;border:1px solid var(--border);border-radius:14px;border-left:4px solid var(--accent)"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">Déjà versé</div><div style="font-size:20px;font-weight:900;margin-top:4px;font-family:'JetBrains Mono',monospace">${eur(tot.verse)}</div></div>
+    <div style="padding:12px 16px;border:1px solid var(--border);border-radius:14px;border-left:4px solid ${reste>0.005?'var(--ko)':'var(--ok)'}"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">Reste à donner</div><div style="font-size:20px;font-weight:900;margin-top:4px;color:${reste>0.005?'var(--ko)':'var(--ok)'};font-family:'JetBrains Mono',monospace">${eur(Math.max(0,reste))}</div></div>
+  </div>`;
+  const body = rows.map(g => {
+    const multiTx = Object.keys(g.rates).length>1;
+    const cells = weeks.map(w => {
+      const x = g.weeks[w];
+      if(!x) return '<td style="text-align:center;color:var(--text-faint)">—</td>';
+      return `<td style="text-align:center"><div style="font-family:'JetBrains Mono',monospace;font-weight:800">${eur(x.eur)}</div><div style="font-size:10px;color:var(--text-muted)">${hh(x.h)} h${multiTx?'':' × '+Object.keys(g.rates)[0]+' €'}</div></td>`;
+    }).join('');
+    const totMec = g.act + g.prime, solde = g.verse - totMec;
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="position:sticky;left:0;background:var(--card);padding:8px 10px;font-weight:700">${esc(g.nom)}<div style="font-size:10px;font-weight:500;color:var(--text-faint)">${esc(g.chs.join(' · '))}${multiTx?' · taux multiples':''}</div></td>
+      ${cells}
+      <td style="text-align:center;font-family:'JetBrains Mono',monospace">${hh(g.nbh)}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${g.prime?eur(g.prime):'<span style="color:var(--text-faint)">—</span>'}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:900;color:var(--ok);background:var(--ok-soft)">${eur(totMec)}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace">${g.verse?eur(g.verse):'<span style="color:var(--text-faint)">—</span>'}</td>
+      <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:800;color:${solde<-0.005?'var(--ko)':'var(--text-muted)'}">${eur(solde)}</td>
+    </tr>`;
+  }).join('');
+  const totCells = weeks.map(w => tot.weeks[w]?`<td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:900">${eur(tot.weeks[w].eur)}</td>`:'<td></td>').join('');
+  const table = `<div style="overflow:auto;border:1px solid var(--border);border-radius:14px"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="background:var(--bg-2);font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted)">
+      <th style="text-align:left;padding:8px 10px;position:sticky;left:0;background:var(--bg-2)">Intérimaire</th>${_paieWeekHead(weeks,wmap)}
+      <th>NB H</th><th style="text-align:right">Prime</th><th style="text-align:right;color:var(--ok)">Total à donner</th><th style="text-align:right">Versé</th><th style="text-align:right">Solde</th>
+    </tr></thead>
+    <tbody>${body}
+      <tr style="background:var(--ok-soft)"><td style="padding:8px 10px;font-weight:900;position:sticky;left:0;background:var(--ok-soft)">💰 TOTAL</td>${totCells}
+        <td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:900">${hh(tot.nbh)}</td>
+        <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:900">${tot.prime?eur(tot.prime):''}</td>
+        <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:900;color:var(--ok)">${eur(aDonner)}</td>
+        <td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:900">${eur(tot.verse)}</td><td></td></tr>
+    </tbody></table></div>`;
+  const aide = `<div class="no-print" style="margin-top:12px;padding:12px 16px;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;font-size:12px;color:var(--text-muted)">💡 Chaque cellule = <b style="color:var(--text)">le montant à donner</b> à l'intérimaire pour cette semaine (heures × €/h net, tous chantiers confondus). <b>Solde = versé − (acompte + prime)</b> : négatif = on lui doit encore ce montant.</div>`;
+  const actions = `<div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
+    <button class="btn btn-ghost" style="padding:11px 20px" onclick="closeModal()">Fermer</button>
+    <button class="btn btn-primary" style="padding:11px 20px" onclick="printPaieMois()">🖨️ Imprimer (1 page)</button>
+  </div>`;
+  showModal('💰 Paie du mois — '+MOIS[STATE.month]+' '+STATE.year, hero+table+aide+actions, '96vw');
+}
+function printPaieMois(){
+  const { weeks, wmap, rows, tot } = _paieMoisData();
+  if(!rows.length){ alert('Aucun intérimaire avec des heures ce mois-ci.'); return; }
+  const aDonner = tot.act + tot.prime;
+  const mm = ('0'+(STATE.month+1)).slice(-2);
+  const wHead = weeks.map(w => `<th>S${w}<div style="font-size:8px;font-weight:600;color:#8FA4BE">${('0'+wmap[w].first).slice(-2)}/${mm}→${('0'+wmap[w].last).slice(-2)}/${mm}</div></th>`).join('');
+  const body = rows.map(g => {
+    const totMec = g.act + g.prime, solde = g.verse - totMec;
+    const cells = weeks.map(w => { const x=g.weeks[w]; return x?`<td><b>${eur(x.eur)}</b><div style="font-size:9px;color:#5B7595">${hh(x.h)} h</div></td>`:'<td class="mut">·</td>'; }).join('');
+    return `<tr><td class="l">${esc(g.nom)}<div style="font-size:9px;color:#8FA4BE">${esc(g.chs.join(' · '))}</div></td>${cells}<td><b>${hh(g.nbh)}</b></td><td>${g.prime?eur(g.prime):'·'}</td><td style="background:#dff6ea"><b>${eur(totMec)}</b></td><td>${g.verse?eur(g.verse):'·'}</td><td>${eur(solde)}</td></tr>`;
+  }).join('');
+  const totCells = weeks.map(w => tot.weeks[w]?`<td><b>${eur(tot.weeks[w].eur)}</b></td>`:'<td></td>').join('');
+  const html = `<div class="fiche-sub">${STATE.client?esc(STATE.client)+' · ':''}${rows.length} intérimaire${rows.length>1?'s':''} · <b>${hh(tot.nbh)} h</b> — 💰 Total à donner <b>${eur(aDonner)}</b> · Versé <b>${eur(tot.verse)}</b> · Reste <b>${eur(Math.max(0,aDonner-tot.verse))}</b></div>
+  <div class="fiche-grid"><div class="fiche-t"><table>
+    <thead><tr><th class="l">Intérimaire</th>${wHead}<th>NB H</th><th>Prime</th><th>Total à donner</th><th>Versé</th><th>Solde</th></tr></thead>
+    <tbody>${body}<tr class="tot"><td class="l">TOTAL</td>${totCells}<td>${hh(tot.nbh)}</td><td>${tot.prime?eur(tot.prime):''}</td><td>${eur(aDonner)}</td><td>${eur(tot.verse)}</td><td></td></tr></tbody>
+  </table></div></div>`;
+  _printFicheWindow('Forma Interim — 💰 Paie du mois · '+MOIS[STATE.month]+' '+STATE.year, html);
 }
 
 /* ════════ FICHE DU MOIS (V2) — tous les chantiers sur UNE page A4 paysage ════════

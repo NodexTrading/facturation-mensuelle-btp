@@ -676,7 +676,7 @@ body {
     <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
     <button class="btn btn-primary" onclick="location.href='v2heures.html'" title="Ouvre le système V2 — comptage en HEURES (nouveau design, taux €/h, chantiers colorés)">⏱️ V2 heure</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
-    <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimer / PDF</button>
+    <button class="btn btn-ghost" onclick="printFicheMois()" title="Tous les tableaux du mois sur UNE page A4 paysage">🖨️ Fiche du mois (1 page)</button>
     <input type="file" id="csv-import-input" accept=".csv,.txt" style="display:none" onchange="onCSVImport(event)">
     <datalist id="carnet-datalist"></datalist>
   </div>
@@ -1669,22 +1669,11 @@ function openPaieRecapTableau(tableauId){
   showModal('💰 Récap paie hebdo — ' + (t.chantier||'(sans nom)'), html, { size: 'xl' });
 }
 
-/* ════════ IMPRESSION PAYSAGE — fenêtre dédiée ════════
-   Ouvre la modale actuellement affichée (récap ou détail paie hebdo) dans une
-   fenêtre propre en A4 PAYSAGE : on réutilise le tableau déjà rendu (mêmes styles
-   et couleurs), on retire le décor de l'app + l'aide + les boutons, et on force
-   l'orientation paysage. Ne touche pas au bouton « Imprimer / PDF » global. */
-function printModalLandscape(){
-  const ov = document.getElementById('modal-overlay');
-  if(!ov){ alert('Ouvre d\'abord le tableau à imprimer.'); return; }
-  const card = ov.firstElementChild;
-  const titleEl = card.querySelector('h2');
-  const title = titleEl ? titleEl.textContent.trim() : 'Paie hebdo';
-  const body = card.children[card.children.length - 1]; // dernier enfant = corps de la modale
-  const clone = body.cloneNode(true);
-  // on enlève tout ce qui ne doit pas être imprimé
-  clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
-  // on récupère les styles + polices de l'app pour un rendu identique
+/* ════════ IMPRESSION « 1 FICHE » — fenêtre dédiée A4 paysage ════════
+   _printFicheWindow(title, innerHTML) : ouvre une fenêtre propre, copie les styles
+   de l'app, force l'A4 PAYSAGE et calcule un ZOOM pour que TOUT tienne sur
+   UNE SEULE page (peu importe le nombre de tableaux/intérimaires). */
+function _printFicheWindow(title, innerHTML){
   const styles = Array.from(document.querySelectorAll('style')).map(s => s.outerHTML).join('');
   const links  = Array.from(document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"]')).map(l => l.outerHTML).join('');
   const w = window.open('', '_blank', 'width=1280,height=860');
@@ -1698,14 +1687,29 @@ function printModalLandscape(){
     // neutralise les sticky / scroll de l'app pour que tout soit visible à l'impression
     '[style*="position:sticky"],[style*="position: sticky"]{ position:static !important; box-shadow:none !important; }',
     '[style*="overflow:auto"],[style*="overflow: auto"],[style*="overflow-x:auto"],[style*="overflow-y:auto"]{ overflow:visible !important; max-height:none !important; }',
-    'table{ width:100% !important; border-collapse:collapse; }',
-    // compaction verticale pour faire tenir plus de lignes
-    '.pl-wrap td, .pl-wrap th{ padding:5px 8px !important; }',
+    '.pl-wrap table{ border-collapse:collapse; }',
     'tr,td,th{ break-inside:avoid; page-break-inside:avoid; }',
+    // modales paie hebdo (tableaux larges de l'app) : compaction
+    '.pl-modal table{ width:100% !important; }',
+    '.pl-modal td, .pl-modal th{ padding:5px 8px !important; }',
+    // ── styles « fiche » (tableaux compacts générés) ──
+    '.fiche-sub{ font-family:"JetBrains Mono",monospace; font-size:11px; color:#5B7595; margin:-4px 0 10px; }',
+    '.fiche-sub b{ color:#0F2B4A; }',
+    '.fiche-grid{ display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }',
+    '.fiche-t{ border:1px solid #c9d6e6; border-radius:8px; overflow:hidden; break-inside:avoid; }',
+    '.fiche-t .ft-head{ display:flex; align-items:baseline; gap:10px; padding:6px 10px; background:#eef4fb; border-bottom:1px solid #c9d6e6; font-family:"Bricolage Grotesque",system-ui,sans-serif; font-size:12px; color:#0F2B4A; }',
+    '.fiche-t .ft-head b{ font-size:13px; }',
+    '.fiche-t .ft-chip{ margin-left:auto; font-family:"JetBrains Mono",monospace; font-size:10px; color:#5B7595; font-weight:700; }',
+    '.fiche-t table{ font-family:"JetBrains Mono",monospace; font-size:10.5px; color:#0F2B4A; }',
+    '.fiche-t th{ background:#f7fafd; font-weight:800; padding:3px 7px; border-bottom:1px solid #c9d6e6; text-align:right; white-space:nowrap; }',
+    '.fiche-t td{ padding:2px 7px; border-bottom:1px solid #e9eff7; text-align:right; white-space:nowrap; }',
+    '.fiche-t th.l, .fiche-t td.l{ text-align:left; }',
+    '.fiche-t td.mut{ color:#8FA4BE; }',
+    '.fiche-t tr.tot td{ background:#dff6ea; font-weight:800; border-top:1.5px solid #16a34a; color:#0F2B4A; }',
+    '.fiche-t td.fac, .fiche-t th.fac{ color:#b45309; }',
   ].join('\n');
-  // Script injecté dans la fenêtre d'impression : calcule un ZOOM pour que TOUT
-  // le tableau (quel que soit le nb d'intérimaires) tienne sur 1 SEULE page paysage,
-  // puis lance l'impression. On mesure à la largeur réelle de la page (A4 paysage).
+  // Zoom auto : mesure le contenu à la largeur réelle A4 paysage et réduit pour
+  // que largeur ET hauteur tiennent sur 1 page, puis ouvre l'impression.
   const fitScript = '<script>(function(){function fit(){try{var wrap=document.querySelector(".pl-wrap");if(wrap){var MM=96/25.4,marg=7;var pageW=(297-2*marg)*MM;var pageH=(210-2*marg)*MM;document.body.style.width=pageW+"px";wrap.style.zoom="1";var w=wrap.scrollWidth,h=wrap.scrollHeight;var s=Math.min(1,pageW/w,pageH/h)*0.98;wrap.style.zoom=String(s);}}catch(e){}setTimeout(function(){window.focus();window.print();},80);}if(document.readyState==="complete"){setTimeout(fit,300);}else{window.addEventListener("load",function(){setTimeout(fit,300);});}})();<\/script>';
   w.document.write(
     '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
@@ -1713,11 +1717,63 @@ function printModalLandscape(){
     + links + styles
     + '<style>' + printCss + '</style></head>'
     + '<body><div class="pl-wrap"><h1>' + title + '</h1>'
-    + clone.innerHTML
+    + innerHTML
     + '</div>' + fitScript + '</body></html>'
   );
   w.document.close();
   w.focus();
+}
+
+/* Imprime la modale paie hebdo affichée (récap ou détail) en 1 page paysage. */
+function printModalLandscape(){
+  const ov = document.getElementById('modal-overlay');
+  if(!ov){ alert('Ouvre d\'abord le tableau à imprimer.'); return; }
+  const card = ov.firstElementChild;
+  const titleEl = card.querySelector('h2');
+  const title = titleEl ? titleEl.textContent.trim() : 'Paie hebdo';
+  const body = card.children[card.children.length - 1]; // dernier enfant = corps de la modale
+  const clone = body.cloneNode(true);
+  clone.querySelectorAll('.no-print, button, input, select, textarea').forEach(el => el.remove());
+  _printFicheWindow(title, '<div class="pl-modal">' + clone.innerHTML + '</div>');
+}
+
+/* ════════ FICHE DU MOIS (V1) — tous les tableaux sur UNE page ════════
+   Génère un tableau compact par chantier (jours par semaine, total J, salaire,
+   facturé) + totaux globaux, le tout auto-réduit pour tenir sur 1 A4 paysage. */
+function printFicheMois(){
+  const weeks = getWeeksOfMonth(STATE.year, STATE.month);
+  const tabs = STATE.tableaux.filter(t => (t.emps||[]).length);
+  if(!tabs.length){ alert('Aucun tableau à imprimer ce mois-ci.'); return; }
+  const fj = n => (Math.round(n*100)/100).toLocaleString('fr-FR');
+  let gJ=0, gS=0, gF=0, gE=0;
+  const blocks = tabs.map(t => {
+    let tJ=0, tS=0, tF=0;
+    const rows = t.emps.map(e => {
+      let j=0; weeks.forEach(w => j += (parseFloat(e.jours[w])||0));
+      let sal = j*(e.salNetHebdo/5) + (parseFloat(e.frais)||0) + (parseFloat(e.ferieSal)||0);
+      let fac = j*(e.factureHebdo/5) + (parseFloat(e.ferieFac)||0);
+      (e.primes||[]).forEach(p => { const m=parseFloat(p.montant)||0; sal+=m; if(p.refacture)fac+=m; });
+      tJ+=j; tS+=sal; tF+=fac;
+      const cells = weeks.map(w => { const v=parseFloat(e.jours[w])||0; return '<td'+(v?'':' class="mut"')+'>'+(v?fj(v):'·')+'</td>'; }).join('');
+      return '<tr><td class="l">'+_esc(e.nom||'(sans nom)')+'</td>'+cells+'<td><b>'+fj(j)+'</b></td><td>'+f(sal)+'</td><td class="fac">'+f(fac)+'</td></tr>';
+    }).join('');
+    let ferieRow = '';
+    if((t.feries||[]).length){
+      let fS=0, fF=0;
+      t.feries.forEach(x => { fS += x.heures*x.tauxSal; fF += x.heures*x.tauxFac; });
+      if(fS || fF){ tS+=fS; tF+=fF; ferieRow = '<tr><td class="l">Fériés (heures)</td>'+weeks.map(()=>'<td class="mut">·</td>').join('')+'<td></td><td>'+f(fS)+'</td><td class="fac">'+f(fF)+'</td></tr>'; }
+    }
+    gJ+=tJ; gS+=tS; gF+=tF; gE+=t.emps.length;
+    return '<div class="fiche-t">'
+      + '<div class="ft-head"><b>'+_esc(t.chantier||'(sans nom)')+'</b><span>'+_esc(t.entreprise||'')+'</span>'
+      + '<span class="ft-chip">'+t.emps.length+' int. · '+fj(tJ)+' j · '+f(tF)+'</span></div>'
+      + '<table><thead><tr><th class="l">Intérimaire</th>'+weeks.map(w=>'<th>S'+w+'</th>').join('')+'<th>J</th><th>Salaire</th><th class="fac">Facturé</th></tr></thead>'
+      + '<tbody>'+rows+ferieRow
+      + '<tr class="tot"><td class="l">TOTAL</td>'+weeks.map(()=>'<td></td>').join('')+'<td>'+fj(tJ)+'</td><td>'+f(tS)+'</td><td>'+f(tF)+'</td></tr>'
+      + '</tbody></table></div>';
+  }).join('');
+  const sub = '<div class="fiche-sub">'+tabs.length+' chantier'+(tabs.length>1?'s':'')+' · '+gE+' intérimaire'+(gE>1?'s':'')+' · <b>'+fj(gJ)+' j</b> — Salaire net <b>'+f(gS)+'</b> · Facturé HT <b>'+f(gF)+'</b> · Marge <b>'+f(gF-gS)+'</b></div>';
+  _printFicheWindow('Forma Interim — Fiche '+monthName(STATE.month)+' '+STATE.year, sub + '<div class="fiche-grid">'+blocks+'</div>');
 }
 
 /* ════════ FÉRIÉS — tableau-aware ════════ */

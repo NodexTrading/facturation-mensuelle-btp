@@ -686,6 +686,7 @@ main.app{max-width:min(1900px,98vw)!important}
     <button class="btn btn-ghost" onclick="openCarnetH()">📒 Carnet (heures)</button>
     <button class="btn btn-ghost" onclick="openArchives()">💾 Sauvegardes</button>
     <button class="btn btn-accent" onclick="triggerCSV()" title="Importer un CSV d'heures (blocs # chantier: + # semaine: Sxx, colonnes nom;lun;mar;mer;jeu;ven;sam;dim;net;fact;prime;verse;note)">📎 Importer CSV (heures)</button>
+    <button class="btn btn-ghost" onclick="printFicheV2()" title="Tous les chantiers du mois sur UNE page A4 paysage">🖨️ Fiche du mois (1 page)</button>
     <button class="btn btn-ghost" onclick="resetAll()">↺ Réinitialiser</button>
     <input type="file" id="csvfile" accept=".csv,.txt" style="display:none" onchange="onCSV(event)">
     <datalist id="carnet-h-list"></datalist>
@@ -893,6 +894,76 @@ function importCSV(text){
   if(!STATE.chantiers.length)STATE.chantiers.push({id:uid(),nom:'',couleur:COLORS[0],emps:[newEmp()]});
   save(); render();
   alert(`✅ Import : ${nCh} chantier(s) · ${nE} intérimaire(s) · ${nWk} semaine(s) chargées.`);
+}
+
+/* ════════ FICHE DU MOIS (V2) — tous les chantiers sur UNE page A4 paysage ════════
+   Même système que la V1 : fenêtre dédiée + zoom auto pour tenir sur 1 SEULE page. */
+function _printFicheWindow(title, innerHTML){
+  const styles = Array.from(document.querySelectorAll('style')).map(s=>s.outerHTML).join('');
+  const links  = Array.from(document.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"]')).map(l=>l.outerHTML).join('');
+  const w = window.open('', '_blank', 'width=1280,height=860');
+  if(!w){ alert('Autorise les pop-ups pour ce site afin d\'imprimer.'); return; }
+  const printCss = [
+    '@page{ size:A4 landscape; margin:7mm; }',
+    'html,body{ background:#fff !important; margin:0; padding:0; }',
+    '.pl-wrap{ padding:0; transform-origin:top left; }',
+    '.pl-wrap > h1{ font-family:"Bricolage Grotesque",system-ui,-apple-system,sans-serif; font-size:17px; font-weight:800; color:#0F2B4A; margin:0 0 8px; }',
+    '*{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }',
+    'tr,td,th{ break-inside:avoid; page-break-inside:avoid; }',
+    '.fiche-sub{ font-family:"JetBrains Mono",monospace; font-size:11px; color:#5B7595; margin:-4px 0 10px; }',
+    '.fiche-sub b{ color:#0F2B4A; }',
+    '.fiche-grid{ display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }',
+    '.fiche-t{ border:1px solid #c9d6e6; border-radius:8px; overflow:hidden; break-inside:avoid; }',
+    '.fiche-t .ft-head{ display:flex; align-items:baseline; gap:10px; padding:6px 10px; background:#eef4fb; border-bottom:1px solid #c9d6e6; font-family:"Bricolage Grotesque",system-ui,sans-serif; font-size:12px; color:#0F2B4A; }',
+    '.fiche-t .ft-head b{ font-size:13px; }',
+    '.fiche-t .ft-chip{ margin-left:auto; font-family:"JetBrains Mono",monospace; font-size:10px; color:#5B7595; font-weight:700; }',
+    '.fiche-t table{ border-collapse:collapse; font-family:"JetBrains Mono",monospace; font-size:10.5px; color:#0F2B4A; }',
+    '.fiche-t th{ background:#f7fafd; font-weight:800; padding:3px 7px; border-bottom:1px solid #c9d6e6; text-align:right; white-space:nowrap; }',
+    '.fiche-t td{ padding:2px 7px; border-bottom:1px solid #e9eff7; text-align:right; white-space:nowrap; }',
+    '.fiche-t th.l, .fiche-t td.l{ text-align:left; }',
+    '.fiche-t td.mut{ color:#8FA4BE; }',
+    '.fiche-t tr.tot td{ background:#dff6ea; font-weight:800; border-top:1.5px solid #16a34a; }',
+    '.fiche-t td.fac, .fiche-t th.fac{ color:#b45309; }',
+  ].join('\n');
+  const fitScript = '<script>(function(){function fit(){try{var wrap=document.querySelector(".pl-wrap");if(wrap){var MM=96/25.4,marg=7;var pageW=(297-2*marg)*MM;var pageH=(210-2*marg)*MM;document.body.style.width=pageW+"px";wrap.style.zoom="1";var w=wrap.scrollWidth,h=wrap.scrollHeight;var s=Math.min(1,pageW/w,pageH/h)*0.98;wrap.style.zoom=String(s);}}catch(e){}setTimeout(function(){window.focus();window.print();},80);}if(document.readyState==="complete"){setTimeout(fit,300);}else{window.addEventListener("load",function(){setTimeout(fit,300);});}})();<\/script>';
+  w.document.write(
+    '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>'+title+'</title>'
+    + links + styles + '<style>'+printCss+'</style></head>'
+    + '<body><div class="pl-wrap"><h1>'+title+'</h1>'+innerHTML+'</div>'+fitScript+'</body></html>'
+  );
+  w.document.close();
+  w.focus();
+}
+
+function printFicheV2(){
+  const chs = STATE.chantiers
+    .map(c => ({ c, emps: (c.emps||[]).filter(e => (e.nom||'').trim() || Object.keys(e.jours||{}).length) }))
+    .filter(x => x.emps.length);
+  if(!chs.length){ alert('Aucun chantier à imprimer ce mois-ci.'); return; }
+  let gH=0, gAct=0, gFact=0, gPrime=0, gE=0;
+  const blocks = chs.map(({c, emps}) => {
+    let tH=0, tAct=0, tFact=0, tPrime=0;
+    const rows = emps.map(e => {
+      const k = calcEmp(e);
+      tH+=k.nbh; tAct+=k.act; tFact+=k.fact; tPrime+=k.prime;
+      return '<tr><td class="l">'+esc(e.nom||'(sans nom)')+'</td>'
+        + '<td><b>'+hh(k.nbh)+'</b></td>'
+        + '<td>'+eur(num(e.txAcompt))+'</td><td>'+eur(k.act)+'</td>'
+        + '<td'+(k.prime?'':' class="mut"')+'>'+(k.prime?eur(k.prime):'·')+'</td>'
+        + '<td class="fac">'+eur(num(e.txFact))+'</td><td class="fac">'+eur(k.fact)+'</td></tr>';
+    }).join('');
+    gH+=tH; gAct+=tAct; gFact+=tFact; gPrime+=tPrime; gE+=emps.length;
+    return '<div class="fiche-t" style="border-top:4px solid '+esc(c.couleur||'#1AAEEE')+'">'
+      + '<div class="ft-head"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:'+esc(c.couleur||'#1AAEEE')+'"></span>'
+      + '<b>'+esc(c.nom||'(sans nom)')+'</b>'
+      + '<span class="ft-chip">'+emps.length+' int. · '+hh(tH)+' h · '+eur(tFact)+'</span></div>'
+      + '<table><thead><tr><th class="l">Intérimaire</th><th>NB H</th><th>€/h net</th><th>ACT</th><th>Prime</th><th class="fac">€/h fact</th><th class="fac">FACT</th></tr></thead>'
+      + '<tbody>'+rows
+      + '<tr class="tot"><td class="l">TOTAL</td><td>'+hh(tH)+'</td><td></td><td>'+eur(tAct)+'</td><td>'+(tPrime?eur(tPrime):'')+'</td><td></td><td>'+eur(tFact)+'</td></tr>'
+      + '</tbody></table></div>';
+  }).join('');
+  const sub = '<div class="fiche-sub">'+(STATE.client?esc(STATE.client)+' · ':'')+chs.length+' chantier'+(chs.length>1?'s':'')+' · '+gE+' intérimaire'+(gE>1?'s':'')+' · <b>'+hh(gH)+' h</b> — Acompte <b>'+eur(gAct+gPrime)+'</b> · Facturé HT <b>'+eur(gFact)+'</b></div>';
+  _printFicheWindow('Forma Interim — Fiche heures '+MOIS[STATE.month]+' '+STATE.year, sub + '<div class="fiche-grid">'+blocks+'</div>');
 }
 
 /* ════════ SAUVEGARDES (sessions V2, stockage séparé) ════════ */

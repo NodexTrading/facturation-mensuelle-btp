@@ -1695,7 +1695,13 @@ function _printFicheWindow(title, innerHTML){
     // ── styles « fiche » (tableaux compacts générés) ──
     '.fiche-sub{ font-family:"JetBrains Mono",monospace; font-size:11px; color:#5B7595; margin:-4px 0 10px; }',
     '.fiche-sub b{ color:#0F2B4A; }',
-    '.fiche-grid{ display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }',
+    '.fiche-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; align-items:start; }',
+    '.fiche-ent{ margin-bottom:14px; }',
+    '.fe-bar{ display:flex; align-items:baseline; gap:14px; padding:6px 12px; margin-bottom:8px; background:#0F2B4A; color:#fff; border-radius:8px; font-family:"Bricolage Grotesque",system-ui,sans-serif; font-size:12px; }',
+    '.fe-bar b{ font-size:14px; letter-spacing:.5px; }',
+    '.fe-bar .fe-mid{ color:#9fb6d1; font-family:"JetBrains Mono",monospace; font-size:10px; font-weight:600; }',
+    '.fe-bar .fe-tot{ margin-left:auto; font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:800; }',
+    '.fe-bar .fe-tot .fac{ color:#FFC58A; }',
     '.fiche-t{ border:1px solid #c9d6e6; border-radius:8px; overflow:hidden; break-inside:avoid; }',
     '.fiche-t .ft-head{ display:flex; align-items:baseline; gap:10px; padding:6px 10px; background:#eef4fb; border-bottom:1px solid #c9d6e6; font-family:"Bricolage Grotesque",system-ui,sans-serif; font-size:12px; color:#0F2B4A; }',
     '.fiche-t .ft-head b{ font-size:13px; }',
@@ -1745,10 +1751,11 @@ function printFicheMois(){
   const tabs = STATE.tableaux.filter(t => (t.emps||[]).length);
   if(!tabs.length){ alert('Aucun tableau à imprimer ce mois-ci.'); return; }
   const fj = n => (Math.round(n*100)/100).toLocaleString('fr-FR');
-  let gJ=0, gS=0, gF=0, gE=0;
-  const blocks = tabs.map(t => {
+  // bloc HTML d'un tableau (intérimaires triés A→Z) ; retourne aussi ses totaux
+  const buildBloc = t => {
     let tJ=0, tS=0, tF=0;
-    const rows = t.emps.map(e => {
+    const emps = [...t.emps].sort((a,b)=>(a.nom||'').localeCompare(b.nom||'','fr'));
+    const rows = emps.map(e => {
       let j=0; weeks.forEach(w => j += (parseFloat(e.jours[w])||0));
       let sal = j*(e.salNetHebdo/5) + (parseFloat(e.frais)||0) + (parseFloat(e.ferieSal)||0);
       let fac = j*(e.factureHebdo/5) + (parseFloat(e.ferieFac)||0);
@@ -1763,17 +1770,33 @@ function printFicheMois(){
       t.feries.forEach(x => { fS += x.heures*x.tauxSal; fF += x.heures*x.tauxFac; });
       if(fS || fF){ tS+=fS; tF+=fF; ferieRow = '<tr><td class="l">Fériés (heures)</td>'+weeks.map(()=>'<td class="mut">·</td>').join('')+'<td></td><td>'+f(fS)+'</td><td class="fac">'+f(fF)+'</td></tr>'; }
     }
-    gJ+=tJ; gS+=tS; gF+=tF; gE+=t.emps.length;
-    return '<div class="fiche-t">'
-      + '<div class="ft-head"><b>'+_esc(t.chantier||'(sans nom)')+'</b><span>'+_esc(t.entreprise||'')+'</span>'
+    const html = '<div class="fiche-t">'
+      + '<div class="ft-head"><b>'+_esc(t.chantier||'(sans nom)')+'</b>'
       + '<span class="ft-chip">'+t.emps.length+' int. · '+fj(tJ)+' j · '+f(tF)+'</span></div>'
       + '<table><thead><tr><th class="l">Intérimaire</th>'+weeks.map(w=>'<th>S'+w+'</th>').join('')+'<th>J</th><th>Salaire</th><th class="fac">Facturé</th></tr></thead>'
       + '<tbody>'+rows+ferieRow
       + '<tr class="tot"><td class="l">TOTAL</td>'+weeks.map(()=>'<td></td>').join('')+'<td>'+fj(tJ)+'</td><td>'+f(tS)+'</td><td>'+f(tF)+'</td></tr>'
       + '</tbody></table></div>';
+    return { html, tJ, tS, tF };
+  };
+  // groupe par ENTREPRISE (A→Z), chantiers triés A→Z dans chaque groupe
+  const groups = {};
+  tabs.forEach(t => { const ent=((t.entreprise||'').trim().toUpperCase())||'SANS ENTREPRISE'; (groups[ent]=groups[ent]||[]).push(t); });
+  const ents = Object.keys(groups).sort((a,b)=>a.localeCompare(b,'fr'));
+  let gJ=0, gS=0, gF=0, gE=0;
+  const sections = ents.map(ent => {
+    const list = groups[ent].sort((a,b)=>(a.chantier||'').localeCompare(b.chantier||'','fr'));
+    let eJ=0, eS=0, eF=0, eN=0;
+    const blocks = list.map(t => { const b=buildBloc(t); eJ+=b.tJ; eS+=b.tS; eF+=b.tF; eN+=t.emps.length; return b.html; }).join('');
+    gJ+=eJ; gS+=eS; gF+=eF; gE+=eN;
+    return '<div class="fiche-ent">'
+      + '<div class="fe-bar"><b>'+_esc(ent)+'</b>'
+      + '<span class="fe-mid">'+list.length+' chantier'+(list.length>1?'s':'')+' · '+eN+' intérim. · '+fj(eJ)+' j</span>'
+      + '<span class="fe-tot">Salaire '+f(eS)+' · <span class="fac">Facturé '+f(eF)+'</span></span></div>'
+      + '<div class="fiche-grid">'+blocks+'</div></div>';
   }).join('');
   const sub = '<div class="fiche-sub">'+tabs.length+' chantier'+(tabs.length>1?'s':'')+' · '+gE+' intérimaire'+(gE>1?'s':'')+' · <b>'+fj(gJ)+' j</b> — Salaire net <b>'+f(gS)+'</b> · Facturé HT <b>'+f(gF)+'</b> · Marge <b>'+f(gF-gS)+'</b></div>';
-  _printFicheWindow('Forma Interim — Fiche '+monthName(STATE.month)+' '+STATE.year, sub + '<div class="fiche-grid">'+blocks+'</div>');
+  _printFicheWindow('Forma Interim — Fiche '+monthName(STATE.month)+' '+STATE.year, sub + sections);
 }
 
 /* ════════ FÉRIÉS — tableau-aware ════════ */

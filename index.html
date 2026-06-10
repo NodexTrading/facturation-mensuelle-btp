@@ -1710,7 +1710,7 @@ function _printFicheWindow(title, innerHTML){
   ].join('\n');
   // Zoom auto : mesure le contenu à la largeur réelle A4 paysage et réduit pour
   // que largeur ET hauteur tiennent sur 1 page, puis ouvre l'impression.
-  const fitScript = '<script>(function(){function fit(){try{var wrap=document.querySelector(".pl-wrap");if(wrap){var MM=96/25.4,marg=7;var pageW=(297-2*marg)*MM;var pageH=(210-2*marg)*MM;document.body.style.width=pageW+"px";wrap.style.zoom="1";var w=wrap.scrollWidth,h=wrap.scrollHeight;var s=Math.min(1,pageW/w,pageH/h)*0.98;wrap.style.zoom=String(s);}}catch(e){}setTimeout(function(){window.focus();window.print();},80);}if(document.readyState==="complete"){setTimeout(fit,300);}else{window.addEventListener("load",function(){setTimeout(fit,300);});}})();<\/script>';
+  const fitScript = '<script>(function(){function fit(){try{var wrap=document.querySelector(".pl-wrap");if(wrap){var MM=96/25.4,marg=7;var pageW=(297-2*marg)*MM;var pageH=(210-2*marg)*MM;document.body.style.width=pageW+"px";wrap.style.zoom="1";var w=wrap.scrollWidth,h=wrap.scrollHeight;var s=Math.min(pageW/w,pageH/h)*0.98;wrap.style.zoom=String(s);}}catch(e){}setTimeout(function(){window.focus();window.print();},80);}if(document.readyState==="complete"){setTimeout(fit,300);}else{window.addEventListener("load",function(){setTimeout(fit,300);});}})();<\/script>';
   w.document.write(
     '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
     + '<title>' + title + '</title>'

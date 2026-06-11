@@ -1890,7 +1890,7 @@ function renderEmpTableHTML(t, weeks){
     body += `<tr>
       <td><input class="t-input name" list="carnet-datalist" value="${_esc(e.nom)}" placeholder="Nom Prénom" onchange="setEmpField(${t.id},${e.id},'nom',this.value)"></td>
       <td class="right"><input class="t-input eur" inputmode="decimal" value="${e.salNetHebdo}" onchange="setEmpField(${t.id},${e.id},'salNetHebdo',this.value)"></td>
-      <td class="right"><input class="t-input eur" inputmode="decimal" value="${e.netFactHebdo||''}" placeholder="${e.salNetHebdo||0}" onchange="setEmpField(${t.id},${e.id},'netFactHebdo',this.value)" title="Base de facturation (× coef). Vide = facturé sur le net payé. Ex : payé 800, facturé 900." style="background:var(--primary-soft);border-color:color-mix(in srgb,var(--primary) 35%,transparent);color:var(--primary-dark);font-weight:600"></td>
+      <td class="right"><input class="t-input eur" inputmode="decimal" value="${e.netFactHebdo||''}" placeholder="net payé" onchange="setEmpField(${t.id},${e.id},'netFactHebdo',this.value)" title="Base de facturation (× coef). Laisse vide = facturé sur le net payé. Renseigne un montant si tu factures plus haut (ex : payé 800, facturé 900)." style="background:var(--primary-soft);border-color:color-mix(in srgb,var(--primary) 35%,transparent);color:var(--primary-dark);font-weight:600;cursor:text"></td>
       <td class="right">${f(tjNet)}</td>
       <td class="right" style="color:var(--accent-dark);font-weight:600">${f(tjFac)}</td>`;
     weeks.forEach(w => {

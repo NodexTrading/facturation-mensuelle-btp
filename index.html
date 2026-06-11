@@ -1022,10 +1022,18 @@ function coefClient(entreprise){
 function ttfHebdo(salNetHebdo, entreprise){
   return (parseFloat(salNetHebdo)||0) * coefClient(entreprise);
 }
+/* Base de facturation d'un mec : le « net facturé » s'il est renseigné (>0), sinon le net payé.
+   Permet de facturer sur une base différente du net réellement versé
+   (ex : payé 800 net/sem mais facturé sur 900 × coef de l'entreprise). */
+function empFactBase(e){
+  const nf = parseFloat(e && e.netFactHebdo);
+  return (nf && nf > 0) ? nf : (parseFloat(e && e.salNetHebdo)||0);
+}
+function empTTF(e, entreprise){ return ttfHebdo(empFactBase(e), entreprise); }
 /* Recalcul global de tous les TTF (à appeler après modification d'un coef) */
 function recomputeAllTTF(){
   STATE.tableaux.forEach(t => {
-    t.emps.forEach(e => { e.factureHebdo = ttfHebdo(e.salNetHebdo, t.entreprise); });
+    t.emps.forEach(e => { e.factureHebdo = empTTF(e, t.entreprise); });
   });
   // Carnet : pareil, recalculer le facturé de chaque tarif selon son entreprise
   Object.keys(CARNET).forEach(nom => {
@@ -1102,7 +1110,7 @@ function setTableauField(tableauId, field, value){
   t[field] = (value||'').toString();
   // Si l'entreprise change : recalcul de tous les TTF du tableau (coef différent)
   if(field === 'entreprise'){
-    t.emps.forEach(e => { e.factureHebdo = ttfHebdo(e.salNetHebdo, t.entreprise); });
+    t.emps.forEach(e => { e.factureHebdo = empTTF(e, t.entreprise); });
   }
   saveStorage();
   render();
@@ -1125,9 +1133,10 @@ function setEmpField(tableauId, empId, field, value){
   } else {
     e[field] = parseFloat(value)||0;
   }
-  // factureHebdo toujours synchronisé pour rétrocompat (export, calculs legacy)
-  e.factureHebdo = ttfHebdo(e.salNetHebdo, t.entreprise);
-  carnetUpsert(e.nom, e.salNetHebdo, e.factureHebdo, t.entreprise);
+  // factureHebdo synchronisé depuis la BASE de facturation (net facturé sinon net payé)
+  e.factureHebdo = empTTF(e, t.entreprise);
+  // le carnet garde le tarif standard du mec (net payé × coef), pas l'override de facturation
+  carnetUpsert(e.nom, e.salNetHebdo, ttfHebdo(e.salNetHebdo, t.entreprise), t.entreprise);
   saveStorage();
   render();
 }
@@ -1189,7 +1198,7 @@ function delEmp(tableauId, empId){
 }
 function addEmp(tableauId){
   const t = getTableau(tableauId); if(!t) return;
-  t.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, factureHebdo: ttfHebdo(0, t.entreprise), jours:{}, primes:[] });
+  t.emps.push({ id: STATE.empIdCtr++, nom:'', salNetHebdo:0, netFactHebdo:0, factureHebdo: ttfHebdo(0, t.entreprise), jours:{}, primes:[] });
   saveStorage();
   render();
 }
@@ -1833,13 +1842,14 @@ function renderEmpTableHTML(t, weeks){
   const showFerie = !t.hideFerie;
   const ferieHeadStyle = 'color:#2f4fb0;background:rgba(61,91,219,.08)';
   let head = `<div style="padding:8px 24px 0;font-size:11px;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-    <span style="flex:1;min-width:220px">💡 TTF dérivé automatiquement : <strong style="color:var(--text)">sal. net × ${coef.toFixed(2).replace('.',',')}</strong> (coef ${_esc((t.entreprise||'défaut').toUpperCase())}). Colonne <strong>Frais</strong> = perso (pas dans la facture client).</span>
+    <span style="flex:1;min-width:220px">💡 TTF dérivé automatiquement : <strong style="color:var(--text)">sal. net × ${coef.toFixed(2).replace('.',',')}</strong> (coef ${_esc((t.entreprise||'défaut').toUpperCase())}). Colonne <strong>Frais</strong> = perso (pas dans la facture client). Colonne <strong>Net facturé</strong> = base à facturer si différente du net payé (ex payé 800 → facturé 900) ; vide = on facture sur le net payé.</span>
     <button class="btn-mini" onclick="toggleFerieColumn(${t.id})" style="font-size:11px;padding:5px 10px;background:${showFerie?'rgba(61,91,219,.12)':'var(--bg-2)'};color:${showFerie?'#2f4fb0':'var(--text-muted)'};border-color:${showFerie?'#2f4fb0':'var(--border)'}" title="Afficher/cacher les colonnes Férié (Heures / Salaire / Facturé, à remplir à la main). Indépendant de la prime +50€.">${showFerie?'👁️ Férié visible':'🙈 Férié caché'}</button>
     <button class="btn-mini" onclick="toggleFraisColumn(${t.id})" style="font-size:11px;padding:5px 10px;background:${showFrais?'var(--primary-soft)':'var(--bg-2)'};color:${showFrais?'var(--primary-dark)':'var(--text-muted)'};border-color:${showFrais?'var(--primary)':'var(--border)'}" title="Afficher/cacher la colonne frais (privée, jamais visible côté client)">${showFrais?'👁️ Frais visibles':'🙈 Frais cachés'}</button>
   </div>
   <div class="t-wrap"><table class="t"><thead><tr>
     <th>Nom / Prénom</th>
-    <th class="right">Sal. net hebdo</th>
+    <th class="right">Sal. net hebdo<br><span style="font-weight:400;font-size:9px;color:var(--text-faint)">(net payé)</span></th>
+    <th class="right" style="color:var(--primary-dark)" title="Base de facturation × coef. Laisse vide pour facturer sur le net payé. Renseigne si tu factures sur un net plus élevé (ex payé 800 → facturé 900).">Net facturé<br><span style="font-weight:400;font-size:9px;color:var(--text-faint)">(vide = net payé)</span></th>
     <th class="right">€/J net</th>
     <th class="right">€/J fact. ${coefLabel}</th>`;
   weeks.forEach(w => head += `<th class="week">S${w}</th>`);
@@ -1858,7 +1868,7 @@ function renderEmpTableHTML(t, weeks){
     tFrais += empFrais;
     const ferieH = parseFloat(e.ferieHeures)||0, ferieSal = parseFloat(e.ferieSal)||0, ferieFac = parseFloat(e.ferieFac)||0;
     tFerieH += ferieH; tFerieSal += ferieSal; tFerieFac += ferieFac;
-    const ttf = ttfHebdo(e.salNetHebdo, t.entreprise);
+    const ttf = empTTF(e, t.entreprise);
     const tjNet = e.salNetHebdo / 5, tjFac = ttf / 5;
     let totJr = 0;
     weeks.forEach(w => totJr += (parseFloat(e.jours[w])||0));
@@ -1880,6 +1890,7 @@ function renderEmpTableHTML(t, weeks){
     body += `<tr>
       <td><input class="t-input name" list="carnet-datalist" value="${_esc(e.nom)}" placeholder="Nom Prénom" onchange="setEmpField(${t.id},${e.id},'nom',this.value)"></td>
       <td class="right"><input class="t-input eur" inputmode="decimal" value="${e.salNetHebdo}" onchange="setEmpField(${t.id},${e.id},'salNetHebdo',this.value)"></td>
+      <td class="right"><input class="t-input eur" inputmode="decimal" value="${e.netFactHebdo||''}" placeholder="${e.salNetHebdo||0}" onchange="setEmpField(${t.id},${e.id},'netFactHebdo',this.value)" title="Base de facturation (× coef). Vide = facturé sur le net payé. Ex : payé 800, facturé 900." style="background:var(--primary-soft);border-color:color-mix(in srgb,var(--primary) 35%,transparent);color:var(--primary-dark);font-weight:600"></td>
       <td class="right">${f(tjNet)}</td>
       <td class="right" style="color:var(--accent-dark);font-weight:600">${f(tjFac)}</td>`;
     weeks.forEach(w => {
@@ -1919,7 +1930,7 @@ function renderEmpTableHTML(t, weeks){
     // Lignes primes
     primes.forEach(p => {
       body += `<tr style="background:rgba(243,150,39,.08)">
-        <td colspan="${4+weeks.length}" style="padding-left:50px;font-style:italic;color:var(--accent-dark);font-family:'Instrument Sans',sans-serif">↳ Prime : ${_esc(p.label)} ${p.refacture?'<span style="font-size:10px;background:var(--accent);color:white;padding:1px 6px;border-radius:4px;margin-left:6px">refacturée</span>':'<span style="font-size:10px;color:var(--text-muted);margin-left:6px">(non refacturée)</span>'}</td>
+        <td colspan="${5+weeks.length}" style="padding-left:50px;font-style:italic;color:var(--accent-dark);font-family:'Instrument Sans',sans-serif">↳ Prime : ${_esc(p.label)} ${p.refacture?'<span style="font-size:10px;background:var(--accent);color:white;padding:1px 6px;border-radius:4px;margin-left:6px">refacturée</span>':'<span style="font-size:10px;color:var(--text-muted);margin-left:6px">(non refacturée)</span>'}</td>
         <td class="center" style="font-style:italic;color:var(--accent-dark)">—</td>
         <td class="right" style="color:var(--accent-dark)">+${f(p.montant)}</td>
         ${showFrais ? '<td class="right" style="color:var(--text-faint)">—</td>' : ''}
@@ -1930,7 +1941,7 @@ function renderEmpTableHTML(t, weeks){
     });
   });
   body += `<tr class="t-row-tot">
-    <td colspan="${4+weeks.length}">TOTAL — ${t.emps.length} intérimaire${t.emps.length>1?'s':''}</td>
+    <td colspan="${5+weeks.length}">TOTAL — ${t.emps.length} intérimaire${t.emps.length>1?'s':''}</td>
     <td class="center">${tJr}</td>
     <td class="right">${f(tSal)}</td>
     ${showFrais ? `<td class="right" style="color:var(--accent-dark);background:var(--accent-soft)">${f(tFrais)}</td>` : ''}

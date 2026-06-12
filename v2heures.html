@@ -836,10 +836,57 @@ function renderChantier(c){
 const CKEY='forma_carnet_heures_v1';
 let CARNET_H={};
 function carnetHLoad(){ try{ const r=localStorage.getItem(CKEY); if(r)CARNET_H=JSON.parse(r)||{}; }catch(e){CARNET_H={};} }
-function carnetHSave(){ try{ localStorage.setItem(CKEY,JSON.stringify(CARNET_H)); }catch(e){} }
+function carnetHSave(){ try{ localStorage.setItem(CKEY,JSON.stringify(CARNET_H)); }catch(e){} carnetHCloudPush(); }
+
+/* ════════ CARNET HEURES — synchro cloud PARTAGÉE (Supabase, même backend que la V1) ════════
+   Carnet commun à toute l'agence : 1 ligne app_state (id "carnet_heures:forma").
+   Pousse (debounce) à chaque changement, tire au démarrage + à l'ouverture. Fusion par _v
+   (la version la plus récente gagne). N'efface jamais une fiche locale. Marche en local si cloud KO. */
+const SUPABASE_URL='https://podlybqnzifojoeqklmv.supabase.co';
+const SUPABASE_ANON='sb_publishable_8qEkvZAK2NE21SN4-PURJQ_CIcK4jm0';
+const _supaBase=SUPABASE_URL.replace(/\/$/,'');
+const _chSupaReady=/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(SUPABASE_URL)&&SUPABASE_ANON.length>20;
+const CARNET_H_CLOUD_ID='carnet_heures:forma';
+function _chNow(){ return Date.now(); }
+function _chSetStatus(s){ const el=document.getElementById('carnet-h-cloud-status'); if(!el)return;
+  if(s==='ok'){el.textContent='☁️ synchronisé sur tous les PC';el.style.color='var(--primary)';}
+  else if(s==='err'){el.textContent='⚠️ hors-ligne (gardé en local)';el.style.color='#c93030';}
+  else if(s==='sync'){el.textContent='☁️ synchronisation…';el.style.color='var(--text-muted)';}
+  else{el.textContent='';} }
+let _chPushTimer=null;
+function carnetHCloudPush(){
+  if(!_chSupaReady)return;
+  if(_chPushTimer)clearTimeout(_chPushTimer);
+  _chSetStatus('sync');
+  _chPushTimer=window.setTimeout(async()=>{
+    try{ const res=await fetch(_supaBase+'/rest/v1/app_state',{method:'POST',headers:{apikey:SUPABASE_ANON,Authorization:'Bearer '+SUPABASE_ANON,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates'},body:JSON.stringify({id:CARNET_H_CLOUD_ID,payload:{carnet:CARNET_H,updated_at:Date.now()},updated_at:new Date().toISOString()})}); _chSetStatus(res.ok?'ok':'err'); }
+    catch(e){ console.warn('Carnet H push:',e); _chSetStatus('err'); }
+  },1200);
+}
+async function _chCloudFetch(){
+  const res=await fetch(_supaBase+'/rest/v1/app_state?id=eq.'+encodeURIComponent(CARNET_H_CLOUD_ID)+'&select=payload',{headers:{apikey:SUPABASE_ANON,Authorization:'Bearer '+SUPABASE_ANON}});
+  if(!res.ok)throw new Error('HTTP '+res.status);
+  const arr=await res.json(); return (arr&&arr.length)?arr[0].payload:null;
+}
+async function carnetHCloudPull(){
+  if(!_chSupaReady)return;
+  _chSetStatus('sync');
+  try{
+    const payload=await _chCloudFetch();
+    const cloud=(payload&&payload.carnet&&typeof payload.carnet==='object')?payload.carnet:null;
+    if(!cloud){ if(Object.keys(CARNET_H).length)carnetHCloudPush(); else _chSetStatus('ok'); return; }
+    let changed=false, extra=false;
+    for(const nom in cloud){ const c=cloud[nom], l=CARNET_H[nom]; if(!l||((c&&c._v)||0)>((l&&l._v)||0)){ CARNET_H[nom]=c; changed=true; } }
+    for(const nom in CARNET_H){ if(!(nom in cloud)){ extra=true; break; } }
+    if(changed){ try{ localStorage.setItem(CKEY,JSON.stringify(CARNET_H)); }catch(e){} refreshCarnetHList();
+      const ta=document.getElementById('ch-bulk'); if(document.getElementById('v2modal')&&(!ta||!ta.value.trim()))openCarnetH(); }
+    if(extra)carnetHCloudPush(); else _chSetStatus('ok');
+  }catch(e){ console.warn('Carnet H pull:',e); _chSetStatus('err'); }
+}
+function carnetHCloudInit(){ carnetHCloudPull(); }
 function _nk(s){ return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' '); }
 function carnetHFind(nom){ const k=_nk(nom); return Object.keys(CARNET_H).find(n=>_nk(n)===k); }
-function carnetHUpsert(nom,a,f){ const t=(nom||'').trim(); if(!t)return; const ex=carnetHFind(t)||t; const p=CARNET_H[ex]||{}; CARNET_H[ex]={txAcompt:(a||p.txAcompt||''),txFact:(f||p.txFact||'')}; carnetHSave(); refreshCarnetHList(); }
+function carnetHUpsert(nom,a,f,defer){ const t=(nom||'').trim(); if(!t)return; const ex=carnetHFind(t)||t; const p=CARNET_H[ex]||{}; CARNET_H[ex]={txAcompt:(a||p.txAcompt||''),txFact:(f||p.txFact||''),_v:_chNow()}; if(defer)return; carnetHSave(); refreshCarnetHList(); }
 function carnetHDelete(nom){ const k=carnetHFind(nom); if(k){ delete CARNET_H[k]; carnetHSave(); refreshCarnetHList(); openCarnetH(); } }
 function refreshCarnetHList(){ const dl=document.getElementById('carnet-h-list'); if(!dl)return; dl.innerHTML=Object.keys(CARNET_H).sort().map(n=>`<option value="${esc(n)}">${esc(CARNET_H[n].txAcompt||'?')} €/h</option>`).join(''); }
 function showModal(t,h,maxw){ closeModal(); const o=document.createElement('div'); o.id='v2modal'; o.style.cssText='position:fixed;inset:0;background:rgba(15,43,74,.55);backdrop-filter:blur(4px);z-index:200;display:grid;place-items:center;padding:20px'; o.onclick=e=>{if(e.target===o)closeModal();}; o.innerHTML=`<div style="background:var(--card);border:1px solid var(--border);border-radius:22px;box-shadow:var(--shadow-lg);max-width:${maxw||'680px'};width:100%;max-height:${maxw?'96vh':'88vh'};overflow:hidden;display:flex;flex-direction:column"><div style="padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px"><h2 style="font-size:17px;font-weight:800;margin:0;flex:1;font-family:'Bricolage Grotesque',sans-serif">${t}</h2><button onclick="closeModal()" style="width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--text-muted);font-size:16px">✕</button></div><div style="padding:22px 24px;overflow:auto">${h}</div></div>`; document.body.appendChild(o); }
@@ -847,10 +894,11 @@ function closeModal(){ const m=document.getElementById('v2modal'); if(m)m.remove
 function openCarnetH(){
   const keys=Object.keys(CARNET_H).sort((a,b)=>a.localeCompare(b));
   const list=keys.length?keys.map(n=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px"><div style="flex:1"><b>${esc(n)}</b><div style="font-size:12px;color:var(--text-muted);font-family:'JetBrains Mono',monospace">net ${esc(CARNET_H[n].txAcompt||'—')} €/h · fact ${esc(CARNET_H[n].txFact||'—')} €/h</div></div><button class="btn-mini danger" onclick="carnetHDelete('${esc(n).replace(/'/g,"\\'")}')">🗑️</button></div>`).join('') : '<div style="text-align:center;color:var(--text-muted);padding:24px">Aucun intérimaire à l\'heure pour l\'instant.</div>';
-  showModal('📒 Carnet — intérimaires à l\'heure', `<p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">Réservé aux payés <b>à l'heure</b>. Quand tu tapes un nom connu, ses taux se remplissent tout seuls.</p><div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><input id="ch-nom" class="input" placeholder="Nom Prénom" style="flex:2;min-width:160px"><input id="ch-net" class="input mono" placeholder="net €/h" style="flex:1;min-width:90px"><input id="ch-fact" class="input mono" placeholder="fact €/h" style="flex:1;min-width:90px"><button class="btn-mini add" onclick="carnetHAddFromForm()">Ajouter</button></div><div style="font-size:11px;color:var(--text-faint);margin-bottom:6px">Ajout en masse (<code>nom;net;fact</code> par ligne) :</div><textarea id="ch-bulk" style="width:100%;height:78px;border:1px solid var(--border);border-radius:10px;padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--bg-2);color:var(--text);margin-bottom:8px"></textarea><button class="btn-mini add" onclick="carnetHBulk()" style="margin-bottom:18px">＋ Ajout en masse</button><h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px">Carnet (${keys.length})</h3>${list}`);
+  showModal('📒 Carnet — intérimaires à l\'heure', `<p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">Réservé aux payés <b>à l'heure</b>. Quand tu tapes un nom connu, ses taux se remplissent tout seuls. <span id="carnet-h-cloud-status" title="Carnet partagé et synchronisé entre tous les PC de l'agence" style="font-weight:700;color:var(--text-muted)"></span></p><div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><input id="ch-nom" class="input" placeholder="Nom Prénom" style="flex:2;min-width:160px"><input id="ch-net" class="input mono" placeholder="net €/h" style="flex:1;min-width:90px"><input id="ch-fact" class="input mono" placeholder="fact €/h" style="flex:1;min-width:90px"><button class="btn-mini add" onclick="carnetHAddFromForm()">Ajouter</button></div><div style="font-size:11px;color:var(--text-faint);margin-bottom:6px">Ajout en masse (<code>nom;net;fact</code> par ligne) :</div><textarea id="ch-bulk" style="width:100%;height:78px;border:1px solid var(--border);border-radius:10px;padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--bg-2);color:var(--text);margin-bottom:8px"></textarea><button class="btn-mini add" onclick="carnetHBulk()" style="margin-bottom:18px">＋ Ajout en masse</button><h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px">Carnet (${keys.length})</h3>${list}`);
+  carnetHCloudPull();
 }
 function carnetHAddFromForm(){ const n=document.getElementById('ch-nom').value.trim(); if(!n){alert('Nom requis');return;} carnetHUpsert(n,document.getElementById('ch-net').value.trim(),document.getElementById('ch-fact').value.trim()); openCarnetH(); }
-function carnetHBulk(){ const L=document.getElementById('ch-bulk').value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean); let n=0; L.forEach(l=>{const p=l.split(/[;\t]/).map(x=>x.trim()); if(p[0]){carnetHUpsert(p[0],p[1]||'',p[2]||'');n++;}}); alert(n+' ajouté(s).'); openCarnetH(); }
+function carnetHBulk(){ const L=document.getElementById('ch-bulk').value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean); let n=0; L.forEach(l=>{const p=l.split(/[;\t]/).map(x=>x.trim()); if(p[0]){carnetHUpsert(p[0],p[1]||'',p[2]||'',true);n++;}}); carnetHSave(); refreshCarnetHList(); alert(n+' ajouté(s).'); openCarnetH(); }
 
 /* ════════ IMPORT CSV (multi-semaines) ════════ */
 function triggerCSV(){ document.getElementById('csvfile').click(); }
@@ -1102,6 +1150,7 @@ load();
 archivesLoad();
 carnetHLoad();
 refreshCarnetHList();
+carnetHCloudInit();   // récupère le carnet heures partagé au démarrage (sync entre PC)
 document.getElementById('f-client').value=STATE.client||'';
 document.getElementById('f-client').addEventListener('input',setHeader);
 render();

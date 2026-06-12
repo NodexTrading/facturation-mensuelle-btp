@@ -685,6 +685,7 @@ main.app{max-width:min(1900px,98vw)!important}
     <button class="btn btn-primary" onclick="addChantier()">+ Chantier</button>
     <button class="btn btn-ghost" onclick="openCarnetH()">📒 Carnet (heures)</button>
     <button class="btn btn-ghost" onclick="openArchives()">💾 Sauvegardes</button>
+    <button class="btn btn-primary" onclick="openTeamModal()" title="Espace partagé : les tableaux de toute l'équipe, accessibles et modifiables sur tous les PC">📂 Équipe (partagé)</button>
     <button class="btn btn-accent" onclick="triggerCSV()" title="Importer un CSV d'heures (blocs # chantier: + # semaine: Sxx, colonnes nom;lun;mar;mer;jeu;ven;sam;dim;net;fact;prime;verse;note)">📎 Importer CSV (heures)</button>
     <button class="btn btn-ghost" onclick="openPaieMois()" title="Combien donner à chaque intérimaire, semaine par semaine (tous chantiers confondus)" style="background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,transparent)">💰 Paie du mois</button>
     <button class="btn btn-ghost" onclick="printFicheV2()" title="Tous les chantiers du mois sur UNE page A4 paysage">🖨️ Fiche du mois (1 page)</button>
@@ -692,6 +693,7 @@ main.app{max-width:min(1900px,98vw)!important}
     <input type="file" id="csvfile" accept=".csv,.txt" style="display:none" onchange="onCSV(event)">
     <datalist id="carnet-h-list"></datalist>
   </div>
+  <div id="team-banner-v2" style="display:none"></div>
 
   <div class="card">
     <div class="card-head"><span class="dot"></span> Période &amp; client</div>
@@ -739,7 +741,100 @@ function isoWeek(y,m,d){ const dt=new Date(Date.UTC(y,m,d)); const dn=(dt.getUTC
 function monthDays(y,m){ const n=daysInMonth(y,m),a=[]; for(let d=1;d<=n;d++){ const dt=new Date(y,m,d); const dow=(dt.getDay()+6)%7; a.push({d,dow,week:isoWeek(y,m,d),we:dow>=5}); } return a; }
 function dateOfISOWeekDay(y,week,dow0){ const jan4=new Date(y,0,4); const j4=(jan4.getDay()+6)%7; const mon=new Date(y,0,4-j4); const dt=new Date(mon); dt.setDate(mon.getDate()+(week-1)*7+dow0); return dt; }
 
-function save(){ try{ localStorage.setItem(KEY,JSON.stringify({STATE,ctr})); }catch(e){} }
+/* ════════ ÉQUIPE — tableaux PARTAGÉS dans le cloud (explorateur par prénom) — V2 heures ════════
+   Chaque tableau "équipe" = 1 ligne app_state (id factu:v2:<uuid>) sur le Supabase partagé.
+   payload { name, author, year, month, client, chantiers, nbCh, nbE, _v, savedAt, deleted }.
+   Tout le monde voit / ouvre / modifie. Doc d'équipe ouvert → synchro auto (debounce). Soft-delete. */
+const TEAM_PREFIX='factu:v2:';
+const FACTU_PRENOM_KEY='forma_factu_prenom';        // partagé avec la V1
+const OPENED_TEAM_KEY='forma_factu_opened_team_v2';
+function getPrenom(){ try{ return (localStorage.getItem(FACTU_PRENOM_KEY)||'').trim(); }catch(e){ return ''; } }
+function setPrenom(p){ try{ localStorage.setItem(FACTU_PRENOM_KEY,(p||'').trim()); }catch(e){} renderTeamBanner(); }
+function getOpenedTeam(){ try{ return JSON.parse(localStorage.getItem(OPENED_TEAM_KEY)||'null'); }catch(e){ return null; } }
+function setOpenedTeam(o){ try{ if(o)localStorage.setItem(OPENED_TEAM_KEY,JSON.stringify(o)); else localStorage.removeItem(OPENED_TEAM_KEY); }catch(e){} renderTeamBanner(); }
+function _teamReady(){ return typeof _chSupaReady!=='undefined' && _chSupaReady; }
+function _teamId(){ return TEAM_PREFIX+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function _teamNow(){ return Date.now(); }
+function _teamH(json){ const h={apikey:SUPABASE_ANON,Authorization:'Bearer '+SUPABASE_ANON}; if(json){ h['Content-Type']='application/json'; h['Prefer']='resolution=merge-duplicates'; } return h; }
+function _teamNbE(){ return STATE.chantiers.reduce((s,c)=>s+(c.emps||[]).filter(e=>e.nom).length,0); }
+function _teamSnapshot(){ return { year:STATE.year, month:STATE.month, client:STATE.client||'', chantiers:JSON.parse(JSON.stringify(STATE.chantiers||[])), nbCh:STATE.chantiers.length, nbE:_teamNbE() }; }
+async function _teamFetch(id){ const r=await fetch(_supaBase+'/rest/v1/app_state?id=eq.'+encodeURIComponent(id)+'&select=payload',{headers:_teamH(false)}); const a=await r.json(); return (a&&a[0])?a[0].payload:null; }
+async function _teamUpsert(id,payload){ const r=await fetch(_supaBase+'/rest/v1/app_state',{method:'POST',headers:_teamH(true),body:JSON.stringify({id:id,payload:payload,updated_at:new Date().toISOString()})}); if(!r.ok)throw new Error('HTTP '+r.status); }
+async function teamList(){ if(!_teamReady())return []; const r=await fetch(_supaBase+'/rest/v1/app_state?id=like.factu:v2:*&select=id,payload,updated_at',{headers:_teamH(false)}); if(!r.ok)throw new Error('HTTP '+r.status); const a=await r.json(); return (a||[]).filter(x=>x&&x.payload&&!x.payload.deleted).map(x=>Object.assign({id:x.id},x.payload)); }
+let _teamPushTimer=null;
+function teamAutoPush(){
+  const op=getOpenedTeam(); if(!op||!_teamReady())return;
+  if(_teamPushTimer)clearTimeout(_teamPushTimer);
+  _teamSetStatus('sync');
+  _teamPushTimer=window.setTimeout(async()=>{ try{ await _teamUpsert(op.id,Object.assign({name:op.name,author:op.author,_v:_teamNow(),savedAt:new Date().toISOString(),deleted:false},_teamSnapshot())); _teamSetStatus('ok'); }catch(e){ console.warn('Team push:',e); _teamSetStatus('err'); } },1500);
+}
+function teamSaveCurrent(){
+  const prenom=getPrenom(); if(!prenom){ askPrenom(true); return; }
+  if(!STATE.chantiers.length || !STATE.chantiers.some(c=>(c.emps||[]).some(e=>e.nom))){ alert("Aucun chantier à enregistrer (ajoute au moins un intérimaire)."); return; }
+  const name=prompt("Nom du tableau (visible par toute l'équipe) :", (STATE.client||'C&P')+' — '+MOIS[STATE.month]+' '+STATE.year);
+  if(name===null)return;
+  const id=_teamId();
+  const payload=Object.assign({name:(name.trim()||'Tableau'),author:prenom,_v:_teamNow(),savedAt:new Date().toISOString(),deleted:false},_teamSnapshot());
+  _teamUpsert(id,payload).then(()=>{ setOpenedTeam({id:id,name:payload.name,author:prenom}); openTeamModal(); }).catch(e=>alert('Erreur : '+e.message));
+}
+async function teamOpen(id){
+  try{
+    const p=await _teamFetch(id); if(!p){ alert('Tableau introuvable.'); return; }
+    if(STATE.chantiers.length && STATE.chantiers.some(c=>(c.emps||[]).some(e=>e.nom)) && !confirm('Ouvrir « '+(p.name||'')+" » ?\n\n⚠️ Ça remplace les chantiers affichés (enregistre-les dans l'équipe avant si besoin).")) return;
+    STATE.year=(typeof p.year==='number'?p.year:STATE.year);
+    STATE.month=(typeof p.month==='number'?p.month:STATE.month);
+    STATE.client=p.client||'';
+    STATE.chantiers=JSON.parse(JSON.stringify(p.chantiers||[]));
+    STATE.chantiers.forEach(c=>{ if((c.id||0)>=ctr)ctr=c.id+1; (c.emps||[]).forEach(e=>{ if((e.id||0)>=ctr)ctr=e.id+1; }); });
+    setOpenedTeam({id:id,name:p.name,author:p.author});
+    save(); closeModal();
+    const fc=document.getElementById('f-client'); if(fc)fc.value=STATE.client||'';
+    render();
+  }catch(e){ alert('Erreur : '+e.message); }
+}
+async function teamRename(id){ const nn=prompt('Nouveau nom :'); if(nn===null)return; try{ const d=await _teamFetch(id); if(!d)return; d.name=nn.trim()||d.name; d._v=_teamNow(); await _teamUpsert(id,d); const op=getOpenedTeam(); if(op&&op.id===id){op.name=d.name;setOpenedTeam(op);} openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
+async function teamDuplicate(id){ const prenom=getPrenom(); if(!prenom){ askPrenom(true); return; } try{ const d=await _teamFetch(id); if(!d)return; const nid=_teamId(); d.name=(d.name||'Tableau')+' (copie)'; d.author=prenom; d._v=_teamNow(); d.savedAt=new Date().toISOString(); d.deleted=false; await _teamUpsert(nid,d); openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
+async function teamDelete(id,name){ if(!confirm('Supprimer « '+(name||'')+" » de l'équipe ?\n(C'est partagé : ça disparaît pour tout le monde.)"))return; try{ const d=(await _teamFetch(id))||{}; d.deleted=true; d._v=_teamNow(); await _teamUpsert(id,d); const op=getOpenedTeam(); if(op&&op.id===id)setOpenedTeam(null); openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
+function teamCloseOpened(){ setOpenedTeam(null); }
+function _teamSetStatus(s){ const el=document.getElementById('team-banner-v2-status'); if(!el)return; el.textContent = s==='sync'?"☁️ synchronisation…":s==='ok'?"☁️ enregistré pour toute l'équipe":s==='err'?"⚠️ hors-ligne (gardé en local)":''; }
+function renderTeamBanner(){
+  const el=document.getElementById('team-banner-v2'); if(!el)return;
+  const op=getOpenedTeam();
+  if(!op){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 16px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:12px;margin:10px 0 0"><span style="font-size:18px">📂</span><div style="flex:1;min-width:160px"><b style="color:var(--primary-dark)">'+esc(op.name||'')+'</b> <span style="font-size:12px;color:var(--text-muted)">· tableau d\'équipe · par '+esc(op.author||'')+'</span><div id="team-banner-v2-status" style="font-size:11px;color:var(--text-muted)">☁️ modifications synchronisées automatiquement</div></div><button class="btn btn-ghost" onclick="openTeamModal()">📂 Équipe</button><button class="btn btn-ghost" onclick="teamCloseOpened()" title="Revenir à ton brouillon local">✕ Quitter</button></div>';
+}
+function askPrenom(force){
+  const cur=getPrenom(); if(cur&&!force)return;
+  const html='<p style="font-size:14px;color:var(--text-muted);margin-bottom:14px">Indique ton <b>prénom</b> — il identifie les tableaux que tu crées dans l\'espace d\'équipe (à saisir une seule fois).</p><input id="prenom-input" value="'+esc(cur)+'" placeholder="Ton prénom" style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:11px;background:var(--bg-2);font-size:15px;color:var(--text);outline:none" onkeydown="if(event.key===\'Enter\'){_validPrenom();}"><div style="margin-top:14px;text-align:right"><button class="btn btn-primary" onclick="_validPrenom()">Valider</button></div>';
+  showModal('👤 Bienvenue sur la facturation (heures)', html);
+  setTimeout(()=>{ const i=document.getElementById('prenom-input'); if(i)i.focus(); },120);
+}
+function _validPrenom(){ const i=document.getElementById('prenom-input'); const v=i?i.value.trim():''; if(!v){ if(i)i.style.borderColor='#dc2626'; return; } setPrenom(v); closeModal(); }
+async function openTeamModal(){
+  const prenom=getPrenom();
+  showModal('📂 Tableaux de l\'équipe', '<div style="text-align:center;padding:32px;color:var(--text-muted)">☁️ Chargement…</div>', '820px');
+  let docs=[]; let err=null;
+  try{ docs=await teamList(); }catch(e){ err=e; }
+  const fmt=iso=>{try{return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return'';}};
+  let body='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:12px;margin-bottom:16px"><span style="font-size:17px">👤</span><div style="flex:1;min-width:130px"><b>'+(prenom?esc(prenom):'<span style=\'color:#dc2626\'>prénom non défini</span>')+'</b> <button class="btn btn-ghost" style="padding:2px 9px;font-size:12px" onclick="askPrenom(true)">changer</button></div><button class="btn btn-primary" onclick="teamSaveCurrent()">💾 Enregistrer le travail actuel dans l\'équipe</button></div>';
+  if(err||!_teamReady()){ body+='<div style="text-align:center;color:#dc2626;padding:24px">Cloud indisponible pour le moment. Réessaie dans un instant.</div>'; }
+  else if(!docs.length){ body+='<div style="text-align:center;color:var(--text-muted);padding:28px">Aucun tableau partagé pour l\'instant.<br>Crée tes chantiers, puis « 💾 Enregistrer le travail actuel dans l\'équipe ».</div>'; }
+  else {
+    const groups={}; docs.forEach(d=>{ const a=((d.author||'').trim())||'— sans nom —'; (groups[a]=groups[a]||[]).push(d); });
+    const authors=Object.keys(groups).sort((a,b)=>a===prenom?-1:(b===prenom?1:a.localeCompare(b,'fr')));
+    authors.forEach(a=>{
+      body+='<div style="font-weight:800;color:var(--primary);margin:16px 0 9px;font-size:14px">📁 '+esc(a)+' <span style="font-weight:500;color:var(--text-muted);font-size:12px">· '+groups[a].length+' tableau'+(groups[a].length>1?'x':'')+'</span></div>';
+      groups[a].sort((x,y)=>String(y.savedAt||'').localeCompare(String(x.savedAt||'')));
+      groups[a].forEach(d=>{
+        const q=String(d.id).replace(/'/g,"\\'"); const nq=esc(d.name||'').replace(/'/g,"\\'");
+        body+='<div style="display:flex;align-items:center;gap:9px;padding:11px 13px;border:1px solid var(--border);border-radius:11px;margin-bottom:8px;background:var(--card)"><div style="flex:1;min-width:0"><div style="font-weight:700">'+esc(d.name||'(sans nom)')+'</div><div style="font-size:12px;color:var(--text-muted)">'+fmt(d.savedAt)+' · '+(d.nbCh||0)+' chantier(s) · '+(d.nbE||0)+' intérim. · '+MOIS[d.month]+' '+d.year+'</div></div><button class="btn btn-primary" onclick="teamOpen(\''+q+'\')">📂 Ouvrir</button><button class="btn btn-ghost" title="Renommer" onclick="teamRename(\''+q+'\')">✏️</button><button class="btn btn-ghost" title="Dupliquer pour moi" onclick="teamDuplicate(\''+q+'\')">📑</button><button class="btn btn-ghost" title="Supprimer (pour tous)" style="color:#dc2626" onclick="teamDelete(\''+q+'\',\''+nq+'\')">🗑️</button></div>';
+      });
+    });
+  }
+  showModal('📂 Tableaux de l\'équipe', body, '820px');
+}
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify({STATE,ctr})); }catch(e){} teamAutoPush(); }
 function load(){ try{ const raw=localStorage.getItem(KEY); if(raw){ const d=JSON.parse(raw); if(d.STATE){STATE=d.STATE; ctr=d.ctr||1;} } }catch(e){} if(!STATE.chantiers)STATE.chantiers=[]; }
 
 function fillMois(){ const sel=document.getElementById('mois'); let o=''; for(let y=2025;y<=2027;y++){ for(let m=0;m<12;m++){ o+=`<option value="${y}-${m}" ${(y===STATE.year&&m===STATE.month)?'selected':''}>${MOIS[m]} ${y}</option>`; } } sel.innerHTML=o; }
@@ -1151,6 +1246,8 @@ archivesLoad();
 carnetHLoad();
 refreshCarnetHList();
 carnetHCloudInit();   // récupère le carnet heures partagé au démarrage (sync entre PC)
+renderTeamBanner();   // bandeau si un tableau d'équipe était ouvert
+setTimeout(function(){ if(!getPrenom()) askPrenom(false); }, 700);   // prénom demandé 1 fois
 document.getElementById('f-client').value=STATE.client||'';
 document.getElementById('f-client').addEventListener('input',setHeader);
 render();

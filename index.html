@@ -673,6 +673,7 @@ body {
     <button class="btn btn-ghost" onclick="openCarnet()" title="Voir et gérer la liste des intérimaires connus (carnet persistant)">📚 Carnet</button>
     <button class="btn btn-ghost" onclick="openCoefsManager()" title="Modifier les coefficients par entreprise (TTF = sal_net × coef)">🏢 Coefficients</button>
     <button class="btn btn-ghost" onclick="openArchivesModal()" title="Enregistrer / recharger des sauvegardes de tes tableaux (tu choisis quoi garder)">💾 Sauvegardes</button>
+    <button class="btn btn-primary" onclick="openTeamModal()" title="Espace partagé : les tableaux de toute l'équipe, accessibles et modifiables sur tous les PC">📂 Équipe (partagé)</button>
     <button class="btn btn-primary" onclick="triggerImportCSV()" title="Importe un fichier CSV de relevé d'heures pour remplir automatiquement les P/A">📎 Importer relevé d'heures</button>
     <button class="btn btn-primary" onclick="location.href='v2heures.html'" title="Ouvre le système V2 — comptage en HEURES (nouveau design, taux €/h, chantiers colorés)">⏱️ V2 heure</button>
     <button class="btn btn-accent" onclick="exportCSV()">📊 Exporter en Excel (.csv)</button>
@@ -680,6 +681,7 @@ body {
     <input type="file" id="csv-import-input" accept=".csv,.txt" style="display:none" onchange="onCSVImport(event)">
     <datalist id="carnet-datalist"></datalist>
   </div>
+  <div id="team-banner" style="display:none"></div>
 
   <!-- PÉRIODE GLOBALE -->
   <section class="card">
@@ -961,6 +963,116 @@ function refreshCarnetDatalist(){
     return `<option value="${n.replace(/"/g,'&quot;')}">${p.salNetHebdo}€/sem ${entLabel}</option>`;
   }).join('');
 }
+/* ════════ ÉQUIPE — tableaux PARTAGÉS dans le cloud (explorateur par prénom) ════════
+   Chaque tableau "équipe" = 1 ligne app_state (id factu:t:<uuid>) sur le Supabase partagé.
+   payload { name, author, year, month, tableaux, nbTableaux, nbEmps, _v, savedAt, deleted }.
+   Tout le monde voit / ouvre / modifie. Quand un tableau d'équipe est ouvert, les modifs
+   se synchronisent automatiquement (debounce). L'anon ne peut pas DELETE → soft-delete (deleted:true). */
+const TEAM_PREFIX = 'factu:t:';
+const FACTU_PRENOM_KEY = 'forma_factu_prenom';   // partagé V1 + V2
+const OPENED_TEAM_KEY  = 'forma_factu_opened_team_v1';
+function getPrenom(){ try{ return (localStorage.getItem(FACTU_PRENOM_KEY)||'').trim(); }catch(e){ return ''; } }
+function setPrenom(p){ try{ localStorage.setItem(FACTU_PRENOM_KEY,(p||'').trim()); }catch(e){} renderTeamBanner(); }
+function getOpenedTeam(){ try{ return JSON.parse(localStorage.getItem(OPENED_TEAM_KEY)||'null'); }catch(e){ return null; } }
+function setOpenedTeam(o){ try{ if(o) localStorage.setItem(OPENED_TEAM_KEY,JSON.stringify(o)); else localStorage.removeItem(OPENED_TEAM_KEY); }catch(e){} renderTeamBanner(); }
+function _teamReady(){ return typeof _carnetSupaReady!=='undefined' && _carnetSupaReady; }
+function _teamId(){ return TEAM_PREFIX + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function _teamNow(){ return Date.now(); }
+function _teamH(json){ const h={apikey:SUPABASE_ANON,Authorization:'Bearer '+SUPABASE_ANON}; if(json){ h['Content-Type']='application/json'; h['Prefer']='resolution=merge-duplicates'; } return h; }
+function _teamSnapshot(){ return { year:STATE.year, month:STATE.month, tableaux:JSON.parse(JSON.stringify(STATE.tableaux)), nbTableaux:STATE.tableaux.length, nbEmps:_archiveNbEmps(STATE.tableaux) }; }
+async function _teamFetch(id){ const r=await fetch(_supaBase+'/rest/v1/app_state?id=eq.'+encodeURIComponent(id)+'&select=payload',{headers:_teamH(false)}); const a=await r.json(); return (a&&a[0])?a[0].payload:null; }
+async function _teamUpsert(id,payload){ const r=await fetch(_supaBase+'/rest/v1/app_state',{method:'POST',headers:_teamH(true),body:JSON.stringify({id:id,payload:payload,updated_at:new Date().toISOString()})}); if(!r.ok) throw new Error('HTTP '+r.status); }
+async function teamList(){ if(!_teamReady()) return []; const r=await fetch(_supaBase+'/rest/v1/app_state?id=like.factu:t:*&select=id,payload,updated_at',{headers:_teamH(false)}); if(!r.ok) throw new Error('HTTP '+r.status); const a=await r.json(); return (a||[]).filter(x=>x&&x.payload&&!x.payload.deleted).map(x=>Object.assign({id:x.id},x.payload)); }
+
+let _teamPushTimer=null;
+function teamAutoPush(){
+  const op=getOpenedTeam(); if(!op||!_teamReady()) return;
+  if(_teamPushTimer) clearTimeout(_teamPushTimer);
+  _teamSetStatus('sync');
+  _teamPushTimer=window.setTimeout(async()=>{
+    try{ await _teamUpsert(op.id, Object.assign({name:op.name,author:op.author,_v:_teamNow(),savedAt:new Date().toISOString(),deleted:false}, _teamSnapshot())); _teamSetStatus('ok'); }
+    catch(e){ console.warn('Team push:',e); _teamSetStatus('err'); }
+  },1500);
+}
+function teamSaveCurrent(){
+  const prenom=getPrenom(); if(!prenom){ askPrenom(true); return; }
+  if(!STATE.tableaux.length || !STATE.tableaux.some(t=>(t.emps||[]).length)){ alert("Aucun tableau à enregistrer (ajoute au moins un intérimaire)."); return; }
+  const ents=[...new Set(STATE.tableaux.map(t=>t.entreprise).filter(Boolean))].join(', ');
+  const name=prompt("Nom du tableau (visible par toute l'équipe) :", (ents||'Tableau')+' — '+monthName(STATE.month)+' '+STATE.year);
+  if(name===null) return;
+  const id=_teamId();
+  const payload=Object.assign({name:(name.trim()||'Tableau'),author:prenom,_v:_teamNow(),savedAt:new Date().toISOString(),deleted:false}, _teamSnapshot());
+  _teamUpsert(id,payload).then(()=>{ setOpenedTeam({id:id,name:payload.name,author:prenom}); openTeamModal(); }).catch(e=>alert('Erreur : '+e.message));
+}
+async function teamOpen(id){
+  try{
+    const p=await _teamFetch(id);
+    if(!p){ alert('Tableau introuvable.'); return; }
+    if(STATE.tableaux.length && STATE.tableaux.some(t=>(t.emps||[]).length) && !confirm('Ouvrir « '+(p.name||'')+" » ?\n\n⚠️ Cela remplace les tableaux affichés actuellement (enregistre-les dans l'équipe avant si besoin).")) return;
+    STATE.tableaux=JSON.parse(JSON.stringify(p.tableaux||[]));
+    if(typeof p.year==='number') STATE.year=p.year;
+    if(typeof p.month==='number') STATE.month=p.month;
+    STATE.tableaux.forEach(t=>{ if((t.id||0)>=STATE.tableauIdCtr)STATE.tableauIdCtr=t.id+1; (t.emps||[]).forEach(e=>{ if((e.id||0)>=STATE.empIdCtr)STATE.empIdCtr=e.id+1; (e.primes||[]).forEach(pr=>{ if((pr.id||0)>=STATE.primeIdCtr)STATE.primeIdCtr=pr.id+1; }); }); });
+    setOpenedTeam({id:id,name:p.name,author:p.author});
+    saveStorage(); closeModal();
+    const ms=document.getElementById('mois'); if(ms) ms.value=STATE.year+'-'+STATE.month;
+    render();
+  }catch(e){ alert('Erreur : '+e.message); }
+}
+async function teamRename(id){ const nn=prompt('Nouveau nom :'); if(nn===null) return; try{ const d=await _teamFetch(id); if(!d) return; d.name=nn.trim()||d.name; d._v=_teamNow(); await _teamUpsert(id,d); const op=getOpenedTeam(); if(op&&op.id===id){ op.name=d.name; setOpenedTeam(op);} openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
+async function teamDuplicate(id){ const prenom=getPrenom(); if(!prenom){ askPrenom(true); return; } try{ const d=await _teamFetch(id); if(!d) return; const nid=_teamId(); d.name=(d.name||'Tableau')+' (copie)'; d.author=prenom; d._v=_teamNow(); d.savedAt=new Date().toISOString(); d.deleted=false; await _teamUpsert(nid,d); openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
+async function teamDelete(id,name){ if(!confirm('Supprimer « '+(name||'')+" » de l'équipe ?\n(C'est partagé : ça disparaît pour tout le monde.)")) return; try{ const d=(await _teamFetch(id))||{}; d.deleted=true; d._v=_teamNow(); await _teamUpsert(id,d); const op=getOpenedTeam(); if(op&&op.id===id) setOpenedTeam(null); openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
+function teamCloseOpened(){ setOpenedTeam(null); }
+function _teamSetStatus(s){ const el=document.getElementById('team-banner-status'); if(!el) return; el.textContent = s==='sync'?"☁️ synchronisation…" : s==='ok'?"☁️ enregistré pour toute l'équipe" : s==='err'?"⚠️ hors-ligne (gardé en local)" : ''; }
+function renderTeamBanner(){
+  const el=document.getElementById('team-banner'); if(!el) return;
+  const op=getOpenedTeam();
+  if(!op){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 16px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:12px;margin:0 0 14px">'
+   +'<span style="font-size:18px">📂</span><div style="flex:1;min-width:160px"><b style="color:var(--primary-dark)">'+_esc(op.name||'')+'</b> <span style="font-size:12px;color:var(--text-muted)">· tableau d\'équipe · par '+_esc(op.author||'')+'</span><div id="team-banner-status" style="font-size:11px;color:var(--text-muted)">☁️ modifications synchronisées automatiquement</div></div>'
+   +'<button class="btn btn-ghost" onclick="openTeamModal()">📂 Équipe</button>'
+   +'<button class="btn btn-ghost" onclick="teamCloseOpened()" title="Arrêter de travailler sur ce tableau d\'équipe (revenir à ton brouillon local)">✕ Quitter</button></div>';
+}
+function askPrenom(force){
+  const cur=getPrenom(); if(cur && !force) return;
+  const html='<p style="font-size:14px;color:var(--text-muted);margin-bottom:14px">Indique ton <b>prénom</b> — il identifie les tableaux que tu crées dans l\'espace d\'équipe (à saisir une seule fois).</p>'
+   +'<input id="prenom-input" value="'+_esc(cur)+'" placeholder="Ton prénom" style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:11px;background:var(--bg-2);font-size:15px;color:var(--text);outline:none" onkeydown="if(event.key===\'Enter\'){_validPrenom();}">'
+   +'<div style="margin-top:14px;text-align:right"><button class="btn btn-primary" onclick="_validPrenom()">Valider</button></div>';
+  showModal('👤 Bienvenue sur la facturation', html);
+  setTimeout(()=>{ const i=document.getElementById('prenom-input'); if(i) i.focus(); },120);
+}
+function _validPrenom(){ const i=document.getElementById('prenom-input'); const v=i?i.value.trim():''; if(!v){ if(i) i.style.borderColor='#dc2626'; return; } setPrenom(v); closeModal(); }
+async function openTeamModal(){
+  const prenom=getPrenom();
+  showModal('📂 Tableaux de l\'équipe', '<div style="text-align:center;padding:32px;color:var(--text-muted)">☁️ Chargement…</div>', { size:'lg' });
+  let docs=[]; let err=null;
+  try{ docs=await teamList(); }catch(e){ err=e; }
+  const fmtDate=iso=>{ try{ return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+  let body='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;background:var(--primary-soft);border:1px solid var(--primary);border-radius:12px;margin-bottom:16px">'
+   +'<span style="font-size:17px">👤</span><div style="flex:1;min-width:130px"><b>'+(prenom?_esc(prenom):'<span style=\'color:#dc2626\'>prénom non défini</span>')+'</b> <button class="btn btn-ghost" style="padding:2px 9px;font-size:12px" onclick="askPrenom(true)">changer</button></div>'
+   +'<button class="btn btn-primary" onclick="teamSaveCurrent()">💾 Enregistrer le travail actuel dans l\'équipe</button></div>';
+  if(err || !_teamReady()){ body+='<div style="text-align:center;color:#dc2626;padding:24px">Cloud indisponible pour le moment. Réessaie dans un instant.</div>'; }
+  else if(!docs.length){ body+='<div style="text-align:center;color:var(--text-muted);padding:28px">Aucun tableau partagé pour l\'instant.<br>Crée tes tableaux, puis clique « 💾 Enregistrer le travail actuel dans l\'équipe ».</div>'; }
+  else {
+    const groups={}; docs.forEach(d=>{ const a=((d.author||'').trim())||'— sans nom —'; (groups[a]=groups[a]||[]).push(d); });
+    const authors=Object.keys(groups).sort((a,b)=> a===prenom?-1:(b===prenom?1:a.localeCompare(b,'fr')));
+    authors.forEach(a=>{
+      body+='<div style="font-weight:800;color:var(--primary);margin:16px 0 9px;font-size:14px">📁 '+_esc(a)+' <span style="font-weight:500;color:var(--text-muted);font-size:12px">· '+groups[a].length+' tableau'+(groups[a].length>1?'x':'')+'</span></div>';
+      groups[a].sort((x,y)=>String(y.savedAt||'').localeCompare(String(x.savedAt||'')));
+      groups[a].forEach(d=>{
+        const q=String(d.id).replace(/'/g,"\\'"); const nq=_esc(d.name||'').replace(/'/g,"\\'");
+        body+='<div style="display:flex;align-items:center;gap:9px;padding:11px 13px;border:1px solid var(--border);border-radius:11px;margin-bottom:8px;background:var(--card)">'
+         +'<div style="flex:1;min-width:0"><div style="font-weight:700">'+_esc(d.name||'(sans nom)')+'</div><div style="font-size:12px;color:var(--text-muted)">'+fmtDate(d.savedAt)+' · '+(d.nbTableaux||0)+' tableau'+((d.nbTableaux||0)>1?'x':'')+' · '+(d.nbEmps||0)+' intérim. · '+monthName(d.month)+' '+d.year+'</div></div>'
+         +'<button class="btn btn-primary" onclick="teamOpen(\''+q+'\')">📂 Ouvrir</button>'
+         +'<button class="btn btn-ghost" title="Renommer" onclick="teamRename(\''+q+'\')">✏️</button>'
+         +'<button class="btn btn-ghost" title="Dupliquer pour moi" onclick="teamDuplicate(\''+q+'\')">📑</button>'
+         +'<button class="btn btn-ghost" title="Supprimer (pour tous)" style="color:#dc2626" onclick="teamDelete(\''+q+'\',\''+nq+'\')">🗑️</button></div>';
+      });
+    });
+  }
+  showModal('📂 Tableaux de l\'équipe', body, { size:'lg' });
+}
 function saveStorage(){
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -970,6 +1082,7 @@ function saveStorage(){
       primeIdCtr: STATE.primeIdCtr, tableauIdCtr: STATE.tableauIdCtr,
     }));
   }catch(e){}
+  teamAutoPush();   // si un tableau d'équipe est ouvert : synchro auto (debounce)
 }
 function loadStorage(){
   try{
@@ -3218,6 +3331,8 @@ STATE.tableaux.forEach(t => {
 });
 refreshCarnetDatalist();
 carnetCloudInit();   // récupère le carnet partagé au démarrage (sync entre PC)
+renderTeamBanner();   // bandeau si un tableau d'équipe était ouvert
+setTimeout(function(){ if(!getPrenom()) askPrenom(false); }, 700);   // prénom demandé 1 fois
 fillMois();
 const _ms = document.getElementById('mois');
 if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;

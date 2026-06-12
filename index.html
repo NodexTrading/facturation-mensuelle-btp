@@ -797,8 +797,76 @@ function loadCarnet(){
 }
 function saveCarnet(){
   try{ localStorage.setItem(CARNET_KEY, JSON.stringify(CARNET)); }catch(e){}
+  carnetCloudPush();
 }
 let CARNET = loadCarnet();
+
+/* ════════ CARNET — synchronisation cloud PARTAGÉE (Supabase) ════════
+   Le carnet est commun à TOUTE l'agence : 1 ligne dans app_state (id "carnet:forma").
+   • chaque PC POUSSE ses changements (debounce 1,2 s) ;
+   • il TIRE ceux des autres au démarrage et à chaque ouverture du carnet ;
+   • fusion par _v (horodatage par fiche) → la version la plus récente gagne ;
+   • la synchro n'EFFACE jamais une fiche locale (tes données existantes sont préservées) ;
+   • si le cloud est injoignable, l'app continue en local. */
+const SUPABASE_URL  = 'https://podlybqnzifojoeqklmv.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_8qEkvZAK2NE21SN4-PURJQ_CIcK4jm0';
+const _supaBase = SUPABASE_URL.replace(/\/$/,'');
+const _carnetSupaReady = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(SUPABASE_URL) && SUPABASE_ANON.length > 20;
+const CARNET_CLOUD_ID = 'carnet:forma';
+function _carnetNow(){ return Date.now(); }
+function _carnetSetStatus(s){
+  const el = document.getElementById('carnet-cloud-status'); if(!el) return;
+  if(s==='ok'){ el.textContent='☁️ synchronisé sur tous les PC'; el.style.color='var(--forma-blue)'; }
+  else if(s==='err'){ el.textContent='⚠️ hors-ligne (gardé en local)'; el.style.color='#c93030'; }
+  else if(s==='sync'){ el.textContent='☁️ synchronisation…'; el.style.color='var(--text-muted)'; }
+  else { el.textContent=''; }
+}
+let _carnetPushTimer = null;
+function carnetCloudPush(){
+  if(!_carnetSupaReady) return;
+  if(_carnetPushTimer) clearTimeout(_carnetPushTimer);
+  _carnetSetStatus('sync');
+  _carnetPushTimer = window.setTimeout(async () => {
+    try{
+      const res = await fetch(_supaBase + '/rest/v1/app_state', {
+        method:'POST',
+        headers:{ apikey:SUPABASE_ANON, Authorization:'Bearer '+SUPABASE_ANON, 'Content-Type':'application/json', Prefer:'resolution=merge-duplicates' },
+        body: JSON.stringify({ id:CARNET_CLOUD_ID, payload:{ carnet:CARNET, updated_at:Date.now() }, updated_at:new Date().toISOString() })
+      });
+      _carnetSetStatus(res.ok ? 'ok' : 'err');
+    }catch(e){ console.warn('Carnet push:', e); _carnetSetStatus('err'); }
+  }, 1200);
+}
+async function _carnetCloudFetch(){
+  const res = await fetch(_supaBase + '/rest/v1/app_state?id=eq.' + encodeURIComponent(CARNET_CLOUD_ID) + '&select=payload', {
+    headers:{ apikey:SUPABASE_ANON, Authorization:'Bearer '+SUPABASE_ANON }
+  });
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const arr = await res.json();
+  return (arr && arr.length) ? arr[0].payload : null;
+}
+async function carnetCloudPull(){
+  if(!_carnetSupaReady) return;
+  _carnetSetStatus('sync');
+  try{
+    const payload = await _carnetCloudFetch();
+    const cloud = (payload && payload.carnet && typeof payload.carnet==='object') ? payload.carnet : null;
+    if(!cloud){ if(Object.keys(CARNET).length) carnetCloudPush(); else _carnetSetStatus('ok'); return; }
+    let changedLocal=false, localExtra=false;
+    for(const nom in cloud){
+      const c=cloud[nom], l=CARNET[nom];
+      if(!l || ((c&&c._v)||0) > ((l&&l._v)||0)){ CARNET[nom]=c; changedLocal=true; }
+    }
+    for(const nom in CARNET){ if(!(nom in cloud)){ localExtra=true; break; } }
+    if(changedLocal){
+      try{ localStorage.setItem(CARNET_KEY, JSON.stringify(CARNET)); }catch(e){}
+      refreshCarnetDatalist();
+      if(document.getElementById('carnet-list')) renderCarnetList();
+    }
+    if(localExtra) carnetCloudPush(); else _carnetSetStatus('ok');
+  }catch(e){ console.warn('Carnet pull:', e); _carnetSetStatus('err'); }
+}
+function carnetCloudInit(){ carnetCloudPull(); }
 
 /* Helpers : récupère le tarif d'un mec pour une entreprise donnée (avec fallback) */
 function _entKey(entreprise){ return (entreprise||'').toString().trim().toUpperCase() || '?'; }
@@ -831,7 +899,7 @@ function carnetPrimary(nom){
   return { salNetHebdo: c.salNetHebdo||0, factureHebdo: c.factureHebdo||0, entreprise: c.entreprise||'', allEnts: [c.entreprise].filter(Boolean) };
 }
 
-function carnetUpsert(nom, salNetHebdo, factureHebdo, entreprise){
+function carnetUpsert(nom, salNetHebdo, factureHebdo, entreprise, defer){
   const cleanNom = (nom||'').trim();
   if(!cleanNom) return;
   const sal = parseFloat(salNetHebdo)||0;
@@ -847,6 +915,8 @@ function carnetUpsert(nom, salNetHebdo, factureHebdo, entreprise){
     factureHebdo: fac || existing.factureHebdo,
   };
   CARNET[cleanNom].lastUsed = new Date().toISOString().slice(0,7);
+  CARNET[cleanNom]._v = _carnetNow();
+  if(defer) return;          // mode lot (ajout en masse) : on sauve/synchronise une seule fois après la boucle
   saveCarnet();
   refreshCarnetDatalist();
 }
@@ -860,6 +930,7 @@ function carnetSetEntreprise(nom, entreprise){
   if(oldKey === newKey) return;
   CARNET[nom].rates[newKey] = CARNET[nom].rates[oldKey];
   delete CARNET[nom].rates[oldKey];
+  CARNET[nom]._v = _carnetNow();
   saveCarnet();
 }
 function carnetSetRates(nom, salNetHebdo, factureHebdo, entreprise){
@@ -870,6 +941,7 @@ function carnetSetRates(nom, salNetHebdo, factureHebdo, entreprise){
     salNetHebdo: parseFloat(salNetHebdo)||0,
     factureHebdo: parseFloat(factureHebdo)||0,
   };
+  CARNET[nom]._v = _carnetNow();
   saveCarnet();
   refreshCarnetDatalist();
 }
@@ -2216,6 +2288,7 @@ function openCarnet(){
       <button class="btn btn-primary" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="openCarnetBulkAdd()">+ Ajout en masse</button>
       <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto" onclick="exportCarnetCSV()">📤 Exporter (CSV)</button>
       <button class="btn btn-ghost" style="padding:10px 16px;font-size:13px;min-height:auto;color:#c93030;border-color:rgba(201,48,48,.35)" onclick="clearCarnetAll()">🗑️ Supprimer tout</button>
+      <span id="carnet-cloud-status" title="Le carnet est partagé et synchronisé entre tous les PC de l'agence" style="margin-left:auto;align-self:center;font-size:11px;font-weight:600;color:var(--text-muted)"></span>
     </div>`;
 
   if(names.length === 0){
@@ -2223,6 +2296,7 @@ function openCarnet(){
       Le carnet est vide. Tu peux le pré-remplir avec <strong>+ Ajout en masse</strong>, ou laisse-le se remplir automatiquement quand tu saisiras un intérimaire avec sa rémunération.
     </p>`;
     showModal('📚 Carnet d\'intérimaires', empty);
+    carnetCloudPull();   // un PC vide récupère le carnet partagé de l'agence
     return;
   }
 
@@ -2254,6 +2328,7 @@ function openCarnet(){
 
   showModal('📚 Carnet d\'intérimaires', body);
   renderCarnetList();
+  carnetCloudPull();   // récupère les dernières mises à jour des autres PC
 }
 
 function renderCarnetList(){
@@ -2288,11 +2363,19 @@ function renderCarnetList(){
     });
   }
 
-  counter.textContent = `${names.length} intérimaire${names.length>1?'s':''} affiché${names.length>1?'s':''} sur ${Object.keys(CARNET).length}`;
+  counter.textContent = `${names.length} intérimaire${names.length>1?'s':''} trouvé${names.length>1?'s':''} sur ${Object.keys(CARNET).length}`;
 
   if(!names.length){
     list.innerHTML = `<p style="text-align:center;color:var(--text-muted);font-size:13px;padding:18px">Aucun résultat.</p>`;
     return;
+  }
+
+  // Perf : avec plusieurs milliers de fiches, on plafonne l'AFFICHAGE (la recherche, elle, reste complète).
+  const RENDER_CAP = 600;
+  let capNotice = '';
+  if(names.length > RENDER_CAP){
+    capNotice = `<p style="color:var(--text-muted);font-size:12px;padding:10px 12px;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;margin:0 0 8px;text-align:center">⚡ ${names.length} fiches trouvées — seules les <strong>${RENDER_CAP}</strong> premières sont affichées. <strong>Tape une recherche</strong> (nom ou entreprise) pour retrouver quelqu'un précisément.</p>`;
+    names = names.slice(0, RENDER_CAP);
   }
 
   // Regroupement par entreprise — un mec peut apparaître dans plusieurs groupes (1 par entreprise dans rates)
@@ -2346,7 +2429,7 @@ function renderCarnetList(){
       </div>`;
     });
   });
-  list.innerHTML = html;
+  list.innerHTML = capNotice + html;
 }
 
 function openCarnetEdit(nom){
@@ -2467,8 +2550,10 @@ function processBulkAddCarnet(){
     // TTF dérivé automatiquement du sal × coef(entreprise)
     const fac = ttfHebdo(sal, ent);
     if(CARNET[nom]) updated++; else added++;
-    carnetUpsert(nom, sal, fac, ent);
+    carnetUpsert(nom, sal, fac, ent, true);   // mode lot : pas de sauvegarde par ligne
   });
+  saveCarnet();             // une seule sauvegarde + 1 synchro cloud pour tout le lot
+  refreshCarnetDatalist();
 
   let msg = `✅ Carnet mis à jour\n\n${added} ajouté${added>1?'s':''}, ${updated} mis à jour`;
   if(skipped) msg += `, ${skipped} ligne${skipped>1?'s':''} ignorée${skipped>1?'s':''} (vide)`;
@@ -3132,6 +3217,7 @@ STATE.tableaux.forEach(t => {
   });
 });
 refreshCarnetDatalist();
+carnetCloudInit();   // récupère le carnet partagé au démarrage (sync entre PC)
 fillMois();
 const _ms = document.getElementById('mois');
 if(_ms) _ms.value = `${STATE.year}-${STATE.month}`;

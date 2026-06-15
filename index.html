@@ -3181,7 +3181,10 @@ function _importPresenceCSVBlock(text, silent){
   let targetTableau;
   // Si métadonnées présentes (header `# chantier:` / `# entreprise:`) → import 100 % automatique
   if(metaChantier){
-    targetTableau = newTableau({ chantier: metaChantier, entreprise: metaEntreprise });
+    // FUSION : si un tableau du même chantier+entreprise existe déjà (ex : la semaine précédente),
+    // on le RÉUTILISE et on ajoute la nouvelle colonne semaine — sinon on en crée un.
+    targetTableau = STATE.tableaux.find(t => _normalizeName(t.chantier||'') === _normalizeName(metaChantier) && _normalizeName(t.entreprise||'') === _normalizeName(metaEntreprise||''))
+      || newTableau({ chantier: metaChantier, entreprise: metaEntreprise });
   } else if(silent){
     // Mode multi-bloc sans header chantier explicite : on crée un tableau auto-nommé
     targetTableau = newTableau({ chantier: '(import sans nom)', entreprise: '' });

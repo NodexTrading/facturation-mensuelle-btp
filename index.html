@@ -1017,15 +1017,109 @@ async function _teamFetch(id){ const r=await fetch(_supaBase+'/rest/v1/app_state
 async function _teamUpsert(id,payload){ const r=await fetch(_supaBase+'/rest/v1/app_state',{method:'POST',headers:_teamH(true),body:JSON.stringify({id:id,payload:payload,updated_at:new Date().toISOString()})}); if(!r.ok) throw new Error('HTTP '+r.status); }
 async function teamList(){ if(!_teamReady()) return []; const r=await fetch(_supaBase+'/rest/v1/app_state?id=like.factu:t:*&select=id,payload,updated_at',{headers:_teamH(false)}); if(!r.ok) throw new Error('HTTP '+r.status); const a=await r.json(); return (a||[]).filter(x=>x&&x.payload&&!x.payload.deleted).map(x=>Object.assign({id:x.id},x.payload)); }
 
-let _teamPushTimer=null;
+let _teamPushTimer=null, _teamPushing=false, _teamLastHistory=[];
+const TEAM_HISTORY_MAX=12;             // nb de sauvegardes gardées par tableau
+const TEAM_HISTORY_COLLAPSE_MS=180000; // regroupe les pushes rapprochés du même auteur (3 min)
+function _teamSetBase(op,v){ try{ op.baseV=v; localStorage.setItem(OPENED_TEAM_KEY, JSON.stringify(op)); }catch(e){} }
+/* Sérialisation CANONIQUE (clés triées) → comparaison fiable malgré le réordonnancement des clés par jsonb. */
+function _teamCanon(v){ if(Array.isArray(v)) return '['+v.map(_teamCanon).join(',')+']'; if(v&&typeof v==='object'){ return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+_teamCanon(v[k])).join(',')+'}'; } return JSON.stringify(v); }
+
 function teamAutoPush(){
   const op=getOpenedTeam(); if(!op||!_teamReady()) return;
   if(_teamPushTimer) clearTimeout(_teamPushTimer);
   _teamSetStatus('sync');
-  _teamPushTimer=window.setTimeout(async()=>{
-    try{ await _teamUpsert(op.id, Object.assign({name:op.name,author:op.author,_v:_teamNow(),savedAt:new Date().toISOString(),deleted:false}, _teamSnapshot())); _teamSetStatus('ok'); }
-    catch(e){ console.warn('Team push:',e); _teamSetStatus('err'); }
-  },1500);
+  _teamPushTimer=window.setTimeout(()=>_teamPushNow(), 1500);
+}
+
+/* Push DURCI (modèle simple, fiabilisé) :
+   • SAUVEGARDES : empile les versions précédentes dans payload._history (max 12) → rien n'est perdu ;
+   • ANTI-PERTE : relit le cloud avant d'écrire ; si un collègue a modifié entre-temps, sa version part
+     dans l'historique + statut « conflit » (au lieu de l'écraser sans trace) ;
+   • GARDE anti-effacement : ne pousse jamais un état vide par-dessus un tableau plein ;
+   • NO-OP : si rien n'a changé vs le cloud, n'écrit pas (évite le bruit + les fausses versions). */
+async function _teamPushNow(){
+  const op=getOpenedTeam(); if(!op||!_teamReady()) return;
+  if(_teamPushTimer){ clearTimeout(_teamPushTimer); _teamPushTimer=null; }
+  if(_teamPushing){ _teamPushTimer=window.setTimeout(()=>_teamPushNow(),600); return; }
+  _teamPushing=true;
+  try{
+    const snap=_teamSnapshot();
+    const localEmpty = !snap.tableaux.length || !snap.tableaux.some(t=>(t.emps||[]).length);
+    let cloud=null; try{ cloud=await _teamFetch(op.id); }catch(e){}
+    const cloudHasData = cloud && Array.isArray(cloud.tableaux) && cloud.tableaux.some(t=>(t.emps||[]).length);
+    if(localEmpty && cloudHasData){ _teamSetStatus('guard'); _teamPushing=false; return; }  // garde anti-effacement
+    if(cloud){
+      const sub={year:snap.year,month:snap.month,tableaux:snap.tableaux};
+      const cloudSub={year:cloud.year,month:cloud.month,tableaux:cloud.tableaux};
+      if(_teamCanon(sub)===_teamCanon(cloudSub)){ _teamSetBase(op,(cloud._v||op.baseV||0)); _teamLastHistory=Array.isArray(cloud._history)?cloud._history:_teamLastHistory; _teamSetStatus('ok'); _teamPushing=false; return; }  // no-op : rien n'a changé (insensible à l'ordre des clés jsonb)
+    }
+    let history = (cloud && Array.isArray(cloud._history)) ? cloud._history.slice(0,TEAM_HISTORY_MAX) : [];
+    let conflict=false;
+    if(cloud){
+      conflict = (cloud._v||0) > (op.baseV||0);                  // un collègue a modifié entre-temps
+      const prev=Object.assign({},cloud); delete prev._history;  // version cloud à sauvegarder
+      const top=history[0];
+      const collapse = !conflict && top && top.author===prev.author && (_teamNow()-(top._v||0) < TEAM_HISTORY_COLLAPSE_MS);
+      if(collapse) history[0]=prev; else history.unshift(prev);
+      history=history.slice(0,TEAM_HISTORY_MAX);
+    }
+    const now=_teamNow();
+    const payload=Object.assign({ name:op.name, author:op.author, _v:now, savedAt:new Date().toISOString(), deleted:false, _history:history }, snap);
+    await _teamUpsert(op.id, payload);
+    _teamLastHistory=history; _teamSetBase(op,now);
+    _teamSetStatus(conflict?'conflict':'ok');
+  }catch(e){ console.warn('Team push:',e); _teamSetStatus('err'); }
+  _teamPushing=false;
+}
+
+/* Flush d'urgence quand l'onglet se ferme/masque : push immédiat (keepalive) du dernier état,
+   en préservant l'historique connu (pas de relecture possible à la fermeture). */
+function teamFlush(){
+  const op=getOpenedTeam(); if(!op||!_teamReady()||!_teamPushTimer) return;
+  clearTimeout(_teamPushTimer); _teamPushTimer=null;
+  const snap=_teamSnapshot();
+  if(!snap.tableaux.length || !snap.tableaux.some(t=>(t.emps||[]).length)) return;  // garde anti-vide
+  const payload=Object.assign({ name:op.name, author:op.author, _v:_teamNow(), savedAt:new Date().toISOString(), deleted:false, _history:_teamLastHistory||[] }, snap);
+  try{ fetch(_supaBase+'/rest/v1/app_state',{method:'POST',headers:_teamH(true),body:JSON.stringify({id:op.id,payload:payload,updated_at:new Date().toISOString()}),keepalive:true}); }catch(e){}
+}
+window.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden') teamFlush(); });
+window.addEventListener('pagehide', teamFlush);
+
+/* Historique des sauvegardes + restauration d'une version (annulable). */
+async function teamHistory(id){
+  try{
+    const p=await _teamFetch(id); if(!p){ alert('Tableau introuvable.'); return; }
+    const hist=Array.isArray(p._history)?p._history:[];
+    const fmt=iso=>{ try{ return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+    let h='<div style="margin-bottom:12px;font-size:13px;color:var(--text-muted)">Version actuelle : <b>'+fmt(p.savedAt)+'</b> · par '+_esc(p.author||'')+' · '+(p.nbTableaux||0)+' tableau(x) · '+(p.nbEmps||0)+' intérim.</div>';
+    if(!hist.length){ h+='<div style="text-align:center;color:var(--text-muted);padding:18px">Aucune version antérieure pour l\'instant.<br><span style="font-size:12px">Les sauvegardes s\'accumulent ici au fil des modifications.</span></div>'; }
+    else{
+      const q=String(id).replace(/'/g,"\\'");
+      hist.forEach((v,i)=>{
+        const nbt=(typeof v.nbTableaux==='number')?v.nbTableaux:(v.tableaux?v.tableaux.length:0);
+        h+='<div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:7px;background:var(--card)">'
+         +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">'+fmt(v.savedAt)+' · '+_esc(v.author||'?')+'</div><div style="font-size:12px;color:var(--text-muted)">'+nbt+' tableau(x) · '+(v.nbEmps||0)+' intérim. · '+monthName(v.month)+' '+v.year+'</div></div>'
+         +'<button class="btn btn-primary" style="padding:5px 11px;font-size:13px" onclick="teamRestoreVersion(\''+q+'\','+i+')">↩️ Restaurer</button></div>';
+      });
+    }
+    showModal('🕘 Historique — '+_esc(p.name||''), h, {size:'lg'});
+  }catch(e){ alert('Erreur : '+e.message); }
+}
+async function teamRestoreVersion(id, idx){
+  try{
+    const p=await _teamFetch(id); if(!p||!Array.isArray(p._history)||!p._history[idx]){ alert('Version introuvable.'); return; }
+    const v=p._history[idx];
+    const fmt=iso=>{ try{ return new Date(iso).toLocaleString('fr-FR'); }catch(e){ return ''; } };
+    if(!confirm('Restaurer la version du '+fmt(v.savedAt)+' (par '+(v.author||'?')+') ?\n\nLa version actuelle sera gardée dans l\'historique (donc annulable).')) return;
+    STATE.tableaux=JSON.parse(JSON.stringify(v.tableaux||[]));
+    if(typeof v.year==='number') STATE.year=v.year;
+    if(typeof v.month==='number') STATE.month=v.month;
+    STATE.tableaux.forEach(t=>{ if((t.id||0)>=STATE.tableauIdCtr)STATE.tableauIdCtr=t.id+1; (t.emps||[]).forEach(e=>{ if((e.id||0)>=STATE.empIdCtr)STATE.empIdCtr=e.id+1; (e.primes||[]).forEach(pr=>{ if((pr.id||0)>=STATE.primeIdCtr)STATE.primeIdCtr=pr.id+1; }); }); });
+    setOpenedTeam({id:id,name:p.name,author:p.author,baseV:(p._v||0)});
+    _teamLastHistory=Array.isArray(p._history)?p._history:[];
+    const ms=document.getElementById('mois'); if(ms) ms.value=STATE.year+'-'+STATE.month;
+    closeModal(); render(); saveStorage();
+  }catch(e){ alert('Erreur : '+e.message); }
 }
 function teamSaveCurrent(){
   const prenom=getPrenom(); if(!prenom){ askPrenom(true); return; }
@@ -1034,8 +1128,8 @@ function teamSaveCurrent(){
   const name=prompt("Nom du tableau (visible par toute l'équipe) :", (ents||'Tableau')+' — '+monthName(STATE.month)+' '+STATE.year);
   if(name===null) return;
   const id=_teamId();
-  const payload=Object.assign({name:(name.trim()||'Tableau'),author:prenom,_v:_teamNow(),savedAt:new Date().toISOString(),deleted:false}, _teamSnapshot());
-  _teamUpsert(id,payload).then(()=>{ setOpenedTeam({id:id,name:payload.name,author:prenom}); openTeamModal(); }).catch(e=>alert('Erreur : '+e.message));
+  const payload=Object.assign({name:(name.trim()||'Tableau'),author:prenom,_v:_teamNow(),savedAt:new Date().toISOString(),deleted:false,_history:[]}, _teamSnapshot());
+  _teamUpsert(id,payload).then(()=>{ _teamLastHistory=[]; setOpenedTeam({id:id,name:payload.name,author:prenom,baseV:payload._v}); openTeamModal(); }).catch(e=>alert('Erreur : '+e.message));
 }
 async function teamOpen(id){
   try{
@@ -1046,7 +1140,8 @@ async function teamOpen(id){
     if(typeof p.year==='number') STATE.year=p.year;
     if(typeof p.month==='number') STATE.month=p.month;
     STATE.tableaux.forEach(t=>{ if((t.id||0)>=STATE.tableauIdCtr)STATE.tableauIdCtr=t.id+1; (t.emps||[]).forEach(e=>{ if((e.id||0)>=STATE.empIdCtr)STATE.empIdCtr=e.id+1; (e.primes||[]).forEach(pr=>{ if((pr.id||0)>=STATE.primeIdCtr)STATE.primeIdCtr=pr.id+1; }); }); });
-    setOpenedTeam({id:id,name:p.name,author:p.author});
+    setOpenedTeam({id:id,name:p.name,author:p.author,baseV:(p._v||0)});
+    _teamLastHistory = Array.isArray(p._history)?p._history:[];
     saveStorage(); closeModal();
     const ms=document.getElementById('mois'); if(ms) ms.value=STATE.year+'-'+STATE.month;
     render();
@@ -1056,7 +1151,7 @@ async function teamRename(id){ const nn=prompt('Nouveau nom :'); if(nn===null) r
 async function teamDuplicate(id){ const prenom=getPrenom(); if(!prenom){ askPrenom(true); return; } try{ const d=await _teamFetch(id); if(!d) return; const nid=_teamId(); d.name=(d.name||'Tableau')+' (copie)'; d.author=prenom; d._v=_teamNow(); d.savedAt=new Date().toISOString(); d.deleted=false; await _teamUpsert(nid,d); openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
 async function teamDelete(id,name){ if(!confirm('Supprimer « '+(name||'')+" » de l'équipe ?\n(C'est partagé : ça disparaît pour tout le monde.)")) return; try{ const d=(await _teamFetch(id))||{}; d.deleted=true; d._v=_teamNow(); await _teamUpsert(id,d); const op=getOpenedTeam(); if(op&&op.id===id) setOpenedTeam(null); openTeamModal(); }catch(e){ alert('Erreur : '+e.message); } }
 function teamCloseOpened(){ setOpenedTeam(null); }
-function _teamSetStatus(s){ const el=document.getElementById('team-banner-status'); if(!el) return; el.textContent = s==='sync'?"☁️ synchronisation…" : s==='ok'?"☁️ enregistré pour toute l'équipe" : s==='err'?"⚠️ hors-ligne (gardé en local)" : ''; }
+function _teamSetStatus(s){ const el=document.getElementById('team-banner-status'); if(!el) return; el.textContent = s==='sync'?"☁️ synchronisation…" : s==='ok'?"☁️ enregistré pour toute l'équipe" : s==='conflict'?"⚠️ aussi modifié par un collègue — sa version est gardée (🕘 Historique)" : s==='guard'?"🛡️ écriture vide bloquée — tableau plein protégé" : s==='err'?"⚠️ hors-ligne (gardé en local)" : ''; }
 function renderTeamBanner(){
   const el=document.getElementById('team-banner'); if(!el) return;
   const op=getOpenedTeam();
@@ -1100,6 +1195,7 @@ async function openTeamModal(){
          +'<button class="btn btn-primary" onclick="teamOpen(\''+q+'\')">📂 Ouvrir</button>'
          +'<button class="btn btn-ghost" title="Renommer" onclick="teamRename(\''+q+'\')">✏️</button>'
          +'<button class="btn btn-ghost" title="Dupliquer pour moi" onclick="teamDuplicate(\''+q+'\')">📑</button>'
+         +'<button class="btn btn-ghost" title="Historique / restaurer une version" onclick="teamHistory(\''+q+'\')">🕘</button>'
          +'<button class="btn btn-ghost" title="Supprimer (pour tous)" style="color:#dc2626" onclick="teamDelete(\''+q+'\',\''+nq+'\')">🗑️</button></div>';
       });
     });

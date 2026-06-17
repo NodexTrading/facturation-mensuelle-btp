@@ -1236,8 +1236,9 @@ function loadStorage(){
               ...e,
               primes: e.primes || [],
               jours: e.jours || {},
-              // Migration : recalcul du TTF selon la nouvelle règle (coef × sal_net)
-              factureHebdo: ttfHebdo(e.salNetHebdo, ent),
+              // TTF recalculé via empTTF → respecte la surcharge « net facturé » (>0), sinon le net payé.
+              // (avant : ttfHebdo(e.salNetHebdo) ignorait le net facturé → facturation perdue au rechargement = sous-facturation client)
+              factureHebdo: empTTF(e, ent),
             })),
             feries: t.feries || [],
           };
@@ -1857,7 +1858,7 @@ function openPaieRecapTableau(tableauId){
   let bigTot = 0, bigJ = 0, bigFac = 0;
   const empsData = t.emps.map(e => {
     const tjNet = (parseFloat(e.salNetHebdo)||0) / 5;
-    const tjFac = (ttfHebdo(e.salNetHebdo, t.entreprise)||0) / 5;
+    const tjFac = (empTTF(e, t.entreprise)||0) / 5;  // respecte la surcharge « net facturé » (sinon sous-facturation)
     let mecTot = 0, totJ = 0, mecFac = 0;
     const cells = weeks.map(w => {
       const j = parseFloat(e.jours[w]||0) || 0;

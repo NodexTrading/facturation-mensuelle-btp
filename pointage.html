@@ -516,12 +516,11 @@ function dayValueInJours(v){
   const s = v.toString().trim().toUpperCase();
   if(s === '' || s === 'A' || s === 'AB' || s === 'F' || s === 'I' || s === '/' || s === '-') return 0;
   if(s === 'P') return 1;
-  // Cas "0.5" / "1" / "0,5"
+  // Tout nombre saisi = des HEURES (règle affichée : ≤5h = ½j, >5h = 1j).
+  // Demi-journée = "0.5" (0,5h ≤ 5h → ½j) · journée pleine = "P" ou les heures réelles (ex 8).
+  // (avant : « ≤1 = jours » faisait que "1" = 1 jour entier → sur-comptage + non monotone vs "2"→½j)
   const direct = parseFloat(s.replace(',', '.'));
   if(!isNaN(direct) && /^\d+([.,]\d+)?$/.test(s.replace(',', '.'))){
-    // Si la valeur est <= 1 (genre 0.5, 1, 0.75) c'est déjà en jours
-    if(direct <= 1) return Math.max(0, Math.min(1, direct));
-    // Sinon c'est des heures (genre 4, 8, 9, 12)
     if(direct > 5) return 1;
     if(direct > 0) return 0.5;
     return 0;
